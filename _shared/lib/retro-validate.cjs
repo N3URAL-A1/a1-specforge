@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseFrontmatter, fail, parseFlags, repoRoot } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
+const { currentScope } = require('./gate-log.cjs');
 const { parseRegistryIds, expandRangeIds, resolveGateId } = require('./gate-ids.cjs');
 const { checkRetroAgainstLog } = require('./retro-gatelog.cjs');
 const { ENFORCED_SINCE } = require('./enforced-since.cjs');
@@ -283,6 +284,7 @@ function cmdRetroValidate(argv) {
   let malformed = false;
   const rawEntries = [];
   const blockInfos = [];
+  const forbidden = [];
   for (const block of candidates) {
     let fm;
     try {
@@ -291,6 +293,7 @@ function cmdRetroValidate(argv) {
       process.stderr.write(`error: retro file frontmatter unreadable: ${e.message}\n`);
       process.exit(2);
     }
+    if (fm.kind === 'machine' || Object.prototype.hasOwnProperty.call(fm, 'machine_record')) forbidden.push(String(fm.machine_record || fm.date));
     const got = parseGatesFired(fm);
     blockInfos.push({ date: fm.date, isEntry: got.present || fm.date !== undefined, entries: got.entries, retroOf: fm.retro_of, hasGates: got.present });
     if (!got.present) continue;
@@ -310,6 +313,13 @@ function cmdRetroValidate(argv) {
     process.exit(2);
   }
 
+  if (forbidden.length > 0) {
+    // `kind: machine` / `machine_record` are written only by `feature close` (machine-retro.cjs); a prose retro that carries
+    // them, a block pasted into its body included, would forge the idempotency key of a run (F-003).
+    return emitExit(1, JSON.stringify({ file: retroPath, entries: [], valid: 0, drift: 0, unknown: 0, forbidden_machine_keys: forbidden }) + '\n',
+      'fix: a retro must not carry `kind: machine` or `machine_record` (only `feature close` writes them); a prose retro uses `retro_of: <spec>#<pr>`.\n');
+  }
+
   const gateLog = runGateLogCheck(flags, registryText, blockInfos, gateLogs);
 
   if (!present) {
@@ -317,7 +327,7 @@ function cmdRetroValidate(argv) {
     // (retro-template.md). Nothing to validate; still print the JSON shape
     // so callers can rely on a stable contract regardless of exit path.
     const out = { file: retroPath, entries: [], valid: 0, drift: 0, unknown: 0, ...(gateLog ? { gate_log: gateLog } : {}) };
-    return emitExit(gateLog && gateLog.problems.length > 0 ? 1 : 0, JSON.stringify(out) + '\n', '');
+    return emitExit(gateLog && gateLog.problems.length > 0 ? 1 : 0, JSON.stringify(out) + '\n', deferredWarn(gateLog) + problemLines(gateLog));
   }
 
   const results = rawEntries.map((entry, idx) => {
@@ -362,7 +372,7 @@ function runGateLogCheck(flags, registryText, blockInfos, gateLogs) {
   }
   try {
     const logPaths = [...new Set(gateLogs.map((p) => path.resolve(process.cwd(), p)))];
-    return checkRetroAgainstLog({ logPaths, registryText, blocks: blockInfos, since });
+    return checkRetroAgainstLog({ logPaths, registryText, blocks: blockInfos, since, scope: currentScope() });
   } catch (e) {
     if (e.code !== 'A1_GATELOG') throw e;
     process.stderr.write(`error: ${e.message}\n`);
@@ -370,6 +380,15 @@ function runGateLogCheck(flags, registryText, blockInfos, gateLogs) {
   }
   return null;
 }
+
+/** @returns {string} one WARN line naming every blocking fail left to the machine entry, else '' */
+function deferredWarn(gateLog) {
+  const d = gateLog && gateLog.deferred;
+  if (!d || d.failed_blocking.length === 0) return '';
+  return `WARN: blocking fail(s) ${d.failed_blocking.join(', ')} are not named here: retro_of ${d.retro_of.join(', ')} leaves them to the kind: machine entry of \`feature close\`; without that close there is no carrier.\n`;
+}
+
+const problemLines = (gateLog) => (gateLog ? gateLog.problems.map((p) => `fix: gate log ${p.rule}: ${p.id} - ${p.reason}.\n`).join('') : '');
 
 /**
  * Emit the JSON report on stdout, the fix instructions on stderr, and own the
@@ -395,7 +414,7 @@ function reportAndExit(retroPath, results, gateLog) {
   const text = JSON.stringify({ file: retroPath, entries: results.map(toEntry), valid, drift, unknown, ...(gateLog ? { gate_log: gateLog } : {}) }) + '\n';
 
   const logProblems = gateLog ? gateLog.problems : [];
-  let err = logProblems.map((p) => `fix: gate log ${p.rule}: ${p.id} - ${p.reason}.\n`).join('');
+  let err = deferredWarn(gateLog) + problemLines(gateLog);
   if (drift === 0 && unknown === 0 && logProblems.length === 0) {
     return emitExit(0, text, err);
   }

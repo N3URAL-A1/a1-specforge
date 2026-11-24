@@ -126,7 +126,9 @@ function readStore(file) {
 /**
  * The frontmatter heads of the store: the lines after a `---` line that is followed by `date:`, up to the next `---`. A head
  * starts only at the file start or after a blank line (every entry write puts one there), so a block quoted inside a prose body
- * (F-003) is not a head.
+ * (F-003) is not a head. `bare` is true when nothing but blank lines separates its closing `---` from EOF or the next `---`:
+ * a machine head has no body.
+ * @returns {{text: string, bare: boolean}[]}
  */
 function heads(text) {
   const out = [];
@@ -136,16 +138,20 @@ function heads(text) {
     if (i > 0 && lines[i - 1].trim() !== '') continue;
     let j = i + 1;
     while (j < lines.length && !/^---\s*$/.test(lines[j])) j++;
-    out.push(lines.slice(i + 1, j).join('\n'));
+    let k = j + 1;
+    while (k < lines.length && lines[k].trim() === '') k++;
+    out.push({ text: lines.slice(i + 1, j).join('\n'), bare: k >= lines.length || /^---\s*$/.test(lines[k]) });
     i = j - 1;
   }
   return out;
 }
 
 const keyRe = (spec, pr) => new RegExp(`^machine_record: ${escapeRe(spec)}#${escapeRe(pr)}\\s*$`, 'm');
-// Only a machine head counts (F-005): a prose retro carries `retro_of`, and a stray `machine_record` line in a prose head is no record.
+// Only a machine head counts (F-005, F-003): `kind: machine`, a `gates_fired` key, no `retro_of`, no body. A prose retro carries
+// `retro_of`; a stray or quoted `machine_record` line is no record.
 const MACHINE_KIND_RE = /^kind: machine\s*$/m;
-const headOf = (text, spec, pr) => heads(text).find((h) => MACHINE_KIND_RE.test(h) && keyRe(spec, pr).test(h));
+const isMachineHead = (h) => h.bare && MACHINE_KIND_RE.test(h.text) && /^gates_fired:/m.test(h.text) && !/^retro_of:/m.test(h.text);
+const headOf = (text, spec, pr) => heads(text).find((h) => isMachineHead(h) && keyRe(spec, pr).test(h.text));
 
 /**
  * Idempotency check under the lock, then one O_APPEND write (no rewrite of the file: a concurrent plain append is not lost).
@@ -178,9 +184,9 @@ function findMachineRecord({ store, spec, pr }) {
   let text;
   try { text = readStore(path.join(store, STORE_FILE)); } catch (_e) { return { found: false, prose_required: true }; }
   if (text === null) return { found: false, prose_required: true };
-  const block = headOf(text, spec, pr);
-  if (!block) return { found: false, prose_required: true };
-  return { found: true, prose_required: !/^prose_required: false\s*$/m.test(block) };
+  const head = headOf(text, spec, pr);
+  if (!head) return { found: false, prose_required: true };
+  return { found: true, prose_required: !/^prose_required: false\s*$/m.test(head.text) };
 }
 
 module.exports = { deriveRetro, proseDecision, renderEntry, readScopes, appendMachineRetro, findMachineRecord };

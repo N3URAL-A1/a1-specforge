@@ -71,9 +71,10 @@ Only patterns with impact score ≥ 6 proceed to Phase 3.
 ## 2e. Gate-ROI (gate retirement candidates)
 
 When **≥5 runs carry a `gates_fired` field** (see `_shared/learning-schema.md`),
-compute per-gate return-on-investment. **Count runs, not entries:** the `kind: machine` entry is the carrier of a run
-(`machine_record: <spec>#<pr>`); a prose retro with `retro_of` carries none. An older prose retro that still has both
-`gates_fired` and `retro_of`, or the same spec, date and PR as a machine entry, is dropped as a duplicate of it.
+compute per-gate return-on-investment. **Count runs, not entries:** (1) a `kind: machine` entry is one run, key `machine_record: <spec>#<pr>`;
+(2) a prose entry with `retro_of` belongs to that run and never counts for gates; (3) a legacy prose entry with `gates_fired` and no `retro_of`
+is dropped when a machine entry has the same spec and the PR number of its `evidence`/`task` equals the `machine_record` pr (ignore the date);
+(4) otherwise it is its own run. Counting across skills (a1-execute retros) is out of scope here.
 
 **If fewer than 5 carry it, say so out loud in the Phase 3 report** — do not
 skip silently. Report the actual count and which gated skills wrote retros
