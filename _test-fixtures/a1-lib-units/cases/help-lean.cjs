@@ -19,8 +19,9 @@ const USAGE = [
   '  a1-tools wave next-check <slug> <wave> --since <iso> [--project <dir>] [--plan <file>] [--checkpoint-each-wave]',
   '  a1-tools wave checks <slug> <wave> --diff-base <ref> [--project <dir>] [--migrations <dir>] [--phase <slug>]',
   '  a1-tools feature plan-steps <spec-path>',
-  '  a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only]',
+  '  a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only] [--issues <tags>]',
   '  a1-tools feature close --cleanup-only [--repo <dir>]',
+  '  a1-tools workflow budget [--root <dir>] [--write] [--base <ref>]',
 ];
 
 // H1 LEAN_HELP reaches `a1-tools --help` (red: `${LEAN_HELP}` removed from HELP in help.cjs).
@@ -28,11 +29,15 @@ check('H1 HELP includes LEAN_HELP', HELP.includes(LEAN_HELP));
 // H2 each usage line is a line of its own.
 const lines = LEAN_HELP.split('\n');
 for (const u of USAGE) check(`H2 usage line present: ${u.slice(0, 40)}`, lines.includes(u));
+// H2b the feature close block names --issues, the retro output fields and the machine record step (spec 027 slice 5, FR-031).
+check('H2b feature close help names --issues, retro fields and the machine record', ['--issues <tags>', 'prose_required', 'gate_log_unreadable', 'machine record'].every((s) => LEAN_HELP.includes(s)));
+// H2c the workflow budget block names its exit codes, the trailer form and the counting rule (spec 027 slice 5, FR-027).
+check('H2c workflow budget help names exit codes, the budget-raise trailer and the counting rule', ['budget_exceeded', 'budget_raised:<skill>', '`budget-raise: <skill>` trailer', 'newline characters', 'base_budget_invalid'].every((s) => LEAN_HELP.includes(s)));
 // H3 the real CLI prints them.
 const r = spawnSync(process.execPath, [TOOLS, '--help'], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 check('H3 --help exits 0', r.status === 0, String(r.status));
 check('H3 --help names wave next-check', r.stdout.includes('wave next-check'));
-check('H3 --help names wave checks, feature plan-steps and feature close', ['wave checks <slug>', 'feature plan-steps <spec-path>', 'feature close --by <spec-id>', 'feature close --cleanup-only'].every((t) => r.stdout.includes(t)));
+check('H3 --help names wave checks, feature plan-steps and feature close', ['wave checks <slug>', 'feature plan-steps <spec-path>', 'feature close --by <spec-id>', 'feature close --cleanup-only', 'workflow budget [--root <dir>]'].every((t) => r.stdout.includes(t)));
 check('H3 --help names pr review-evidence with --phase', r.stdout.includes('pr review-evidence --head <sha> --phase <scope>'));
 // H4 the line before the reuse paragraph is empty (red: the empty line removed).
 const at = lines.indexOf('  Input-hash reuse (spec 027 FR-020): `checklist run <slug>/<feature> --only 9,10,11`, `lane-split check` and');

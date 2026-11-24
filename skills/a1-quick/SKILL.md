@@ -85,7 +85,7 @@ Set frontmatter `result: in-progress`, `escalated: false`.
 git -C <repo> checkout -b quick/<slug> main
 ```
 
-No `git worktree add` call anywhere in this skill — the clean-tree
+No `git worktree add` call anywhere in this skill — the clean-tree <!-- lint-allow: forbidden-example -->
 precondition is already guaranteed by Step 1's eligibility check (or the
 caller's), so no separate isolation step is needed here. All edits happen in
 the primary checkout on this branch.
@@ -278,7 +278,7 @@ Template: `templates/run-record-template.md`.
 - Never spawn a sub-agent in the core flow (Steps 1–7). If a task turns out
   to need agent-level judgment, that itself is a signal to escalate, not a
   reason to bend this rule.
-- Never use `git worktree add` — isolation is the `quick/<slug>` branch only.
+- Never use `git worktree add` — isolation is the `quick/<slug>` branch only. <!-- lint-allow: forbidden-example -->
 - Never commit before the Step 5 checkpoint is confirmed.
 - Never make more than one commit per run.
 - Never touch a forbidden-surface path, even if discovered only after

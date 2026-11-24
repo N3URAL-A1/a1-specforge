@@ -71,9 +71,10 @@ a1-pr-review is complete. Registry status: `pr-open`.
   NOT mark registry. Suggest `gh pr view` to inspect.
 - Push rejected: do not auto-force. Ask user.
 
-## Retro (mandatory, every run)
+## Retro (only when a1-pr-review runs on its own, no caller)
 
-Write one retro entry exactly as defined in `_shared/retro-template.md`
+With a caller (a spec id or phase handed over) this retro is folded into the caller's machine record and prose retro (`05-merge.md` close-out item 1); write none here.
+Without a caller, write one retro entry exactly as defined in `_shared/retro-template.md`
 (entry format + write targets: learning store first, dev cache best-effort),
 with skill = `a1-pr-review`. Write it once, after the merge, as step 1 of the close-out in
 `05-merge.md` 5.4 (the merge-check gate-log lines only exist after 5.3, and the worktree exit deletes the log).

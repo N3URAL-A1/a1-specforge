@@ -11,6 +11,7 @@ arrays.
 - `branch` (the feature branch)
 - `phase_history` (last entry, used as scope hint)
 - `caller_spec_id` (a1-new-feature hands over its spec id; any other caller: `none`). Read by 2.3d and by 05-merge.md.
+- `issue_tags` (problems of the run that the caller or the owner names in chat as comma-separated tags a-z 0-9 _ -; default `none`). Read by 05-merge.md items 1 and 3; the orchestrator strips all newlines first.
 
 ## Steps
 

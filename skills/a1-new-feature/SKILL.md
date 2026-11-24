@@ -146,46 +146,8 @@ The linkage convention (`<!-- entry: <slug> -->` markers in the roadmap file,
 `a1-roadmap`'s SKILL.md.
 
 **Profile resolve (every run, before Phase 1).** Run `node <repo>/_shared/a1-tools.cjs profile resolve [--profile <name>] --repo-root <repo> [--spec <path>]`; exit 1 or 2 stops the run. When the printed `profile` is `kritis`, the blocks marked `a1-profile:kritis` apply to this run; otherwise ignore them.
+When it prints `kritis`, read `workflows/kritis.md` before Phase 1 and apply it to this run.
 
-<!-- a1-profile:kritis -->
-**KRITIS profile only** — skip this block unless the run profile is `kritis`.
-
-## Profile Gate (optional `kritis` profile, spec 006-specforge-kritis-profile)
-
-**Arguments.** `--profile <name>` selects a profile for this run (the only known value is
-`kritis`). `--simulate <csv>` lists stakeholder role ids (1-5, from
-`_shared/profiles/kritis/stakeholder-roles.md`) for the optional simulation in Phase 3 Step 2c.
-Both are ignored when the run profile is not `kritis`.
-
-**Resolve (after the Roadmap Gate, before Phase 1).** The resolve step is the unguarded
-"Profile resolve" line above this block: it runs on every run, with or without `--profile`, so a
-profile declared in `docs/product/index.json` or the constitution is found (FR-001). The
-precedence is fail-closed: flag, then spec frontmatter, then `docs/product/index.json`, then the
-constitution marker.
-
-Exit 0 prints `{profile, source, isolation, ...}`; `profile: null` means no profile and this
-whole section is skipped. Exit 1 or 2 stops the run and shows the message. Phases 2 to 6 started
-in a new session pass `--spec <path>` and re-resolve from the spec frontmatter.
-
-**Under `kritis`:**
-
-1. Announce it in one line: "KRITIS profile active (source: <source>): EARS requirements, NFR
-   injection, STRIDE threat model at Gate C, blank-slate run."
-2. Right after `spec init` (Phase 1 Step 2), persist the decision so later sessions re-resolve:
-
-   ```bash
-   node <repo>/_shared/a1-tools.cjs profile set --spec <spec-path> kritis
-   ```
-
-3. **Blank slate.** During the run do not read `.claude/agent-memory/`, the learning store
-   (`pattern/a1-learnings/`, `.a1/learnings/`) or any `_learning.md` file, and append the
-   blank-slate clause to every brief you give a sub-agent.
-4. **Honest limit.** A skill cannot unload context the harness injected before it ran: the
-   project `CLAUDE.md` and the auto-memory index are already in the session. This skill does
-   not enforce a clean session and does not claim to. Tell the user to start KRITIS runs in a
-   fresh session with auto-memory switched off, and say so in the announcement if the session
-   is not fresh.
-<!-- /a1-profile:kritis -->
 ## docs/product Wiring (HARD RULE — CLI-only mutations)
 
 When the project uses `docs/product/` (schema v1), all mutations to
@@ -308,69 +270,13 @@ the next step is probably fine." See `workflows/05-implement.md` and
 `workflows/06-verify.md` for exactly where each `code-scope stage` call sits
 in the phase flow.
 
-## Marketing Gate (after `done` — customer-visible features only)
-
-A feature that reached `done` is not automatically known to the public landing. Before the run
-ends, decide once whether it belongs there. Applies **only** to projects whose product is
-A1//office (`n3ural-platform`); skip silently for every other project.
-
-Ask these five questions (do not delegate the judgement, answer them from the spec and
-the acceptance record — VERIFICATION.md when a phase folder exists, otherwise the spec
-frontmatter: `status: done` + `verify_failures: []`):
-
-1. Would a customer notice this **without an explanation**?
-2. Is it usable **at no extra cost** in the customer's existing tier?
-3. Is it **live in production** — not merely merged? (Deployed image contains the merge commit.)
-4. Does it change **what the customer can delegate**, or how reliably?
-5. Is the claim true **without an asterisk** (no "planned", "in preparation", "provided that")?
-
-**Any "no" → stop here.** Note the failing criterion in one line and end the run. Internal
-refactorings, migrations, test infrastructure, bug fixes and compliance work are never
-customer-visible in this sense — do not even ask the user.
-
-**All five "yes" → hand off** (do not write landing files from this skill):
-
-    Skill: a1-landing-feature
-    Args: --spec "project/<slug>/spec/<###>-<feature-slug>.md" --phase "<phase-dir>"
-
-`a1-landing-feature` owns the landing repo end to end (register via `product` CLI, bilingual
-copy, Bertram voice review, `pnpm build`, branch + PR, subagent review, merge). This skill does
-not edit `a1-office-landing` itself. Report in German what was merged — the user does not
-review PRs (see `a1-pr-review` hand-offs).
+After `done`, a customer-visible A1//office feature goes to the global skill `a1-landing-feature`, which asks the publication questions.
 
 ## Isolation Gate (HARD RULE — before Phase 5 Implement)
 
-No feature code is written in the primary checkout. Before the first wave of
-Phase 5, the feature MUST be moved into its own git worktree on a fresh branch off
-`main`. This prevents the parallel-session corruption class: two sessions editing
-the same working tree overwrite each other's files and push half-finished work
-(e.g. a referenced type that was never committed) to `main`, leaving it build-red.
-
-1. **Create the worktree** (delegate to the `a1-worktree` skill, or inline):
-   ```bash
-   git -C <repo> fetch origin main
-   git -C <repo> worktree add ../a1-worktrees/<feature-slug> -b feature/<feature-slug> origin/main
-   ```
-   Every wave's edits, builds, and tests happen inside that worktree path.
-2. **Implement wave by wave** there. After each wave, build + tests must be GREEN
-   in the worktree before the next wave.
-3. **Merge via PR** only after the final wave is GREEN (typically after Phase 6
-   Verify passes): hand the worktree to `a1-pr-review`
-   (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR, runs
-   the review, and squash-merges (`gh pr merge <n> --squash --delete-branch`). No
-   local merge into `main`, no `git push origin main`.
-   If `origin/main` no longer builds for reasons unrelated to this feature:
-   STOP, do NOT layer on top, report to Robert.
-4. **Tear down** the worktree: done by `a1-pr-review` after the merge — do not
-   exit it a second time here.
-
-**Never** cherry-pick commits onto a fresh main branch as a merge workaround.
-**Never** push a build-red `main`. **Never** edit the primary checkout mid-feature
-while another session may hold it.
-
-When the branch and the shared-state files are pushed:
-`_shared/push-cadence.md`. Full cross-skill convention incl. scope-claim order:
-`_shared/parallel-spec-isolation.md`.
+No feature code in the primary checkout: create the worktree with the `a1-worktree` skill before Wave 1 (never a raw git command).
+Push, PR, squash merge and teardown run in `a1-pr-review` (`skills/a1-pr-review/workflows/05-merge.md`, then `feature close`).
+Full convention, scope-claim order and push cadence: `_shared/parallel-spec-isolation.md`.
 
 ## Routing — pick the right phase
 
@@ -442,6 +348,7 @@ The skill **proposes** code agents in Phase 5 based on the wave-plan brief; the 
 - **Never write feature code outside an isolated worktree on a feature branch.**
   The Isolation Gate runs before Phase 5. Merge to `main` only when build + tests
   are GREEN. Never cherry-pick as a merge workaround. Never push a build-red `main`.
+- If `origin/main` is red for reasons unrelated to this feature: STOP, do not layer on top, report to Robert.
 - Never edit the spec frontmatter directly with Edit/Write — always use `a1-tools spec update-status`.
 - Never skip a phase. Depth scales with the spec's `size` class instead (see
   "Size triage & fast path") — a Size-S feature runs every phase in compact

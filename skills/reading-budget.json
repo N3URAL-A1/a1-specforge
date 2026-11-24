@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "rule": "Lines are counted as newline characters (wc -l); the default path of a skill is SKILL.md plus every workflows/*.md whose first line is not a conditional header (<!-- load: conditional trigger=<group> [<sub>] -->).",
+  "budgets": {
+    "a1-analyze": 1012,
+    "a1-checklist": 221,
+    "a1-constitution": 703,
+    "a1-evolve": 622,
+    "a1-execute": 1061,
+    "a1-fix": 1178,
+    "a1-modernize": 1063,
+    "a1-new-feature": 2355,
+    "a1-new-project": 704,
+    "a1-phantom": 279,
+    "a1-plan": 422,
+    "a1-pr-review": 909,
+    "a1-progress": 315,
+    "a1-quick": 295,
+    "a1-reconcile": 679,
+    "a1-roadmap": 719,
+    "a1-ux-studio": 1364,
+    "a1-worktree": 642
+  }
+}

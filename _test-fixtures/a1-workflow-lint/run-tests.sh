@@ -272,6 +272,8 @@ caseW10() {
   fi
 }
 
+# (02-execute.md is no longer a required vault-sync file since spec 027 slice 5; W12 below is the module-level
+# sync_per_wave case for it.)
 # ---------- W11-W14: rule vault-sync-step (spec 010, Wave 4, FR-008) ----------
 # The plan names these W8-W10; W8-W10 were already taken by spec 007, so they
 # are numbered W11-W14 here (W14 adds the third required file, 04-audit.md,
@@ -331,7 +333,7 @@ vaultSyncSummary() {
   " "$1" 2>&1
 }
 
-# W11: unmodified skills copy -> exit 0, vault_sync_checked 3, no finding.
+# W11: unmodified skills copy -> exit 0, vault_sync_checked 2, no finding.
 # Red-making change: an isSkillsTree() scope test that matches nothing
 # (vault_sync_checked 0), or deleting the step from any one workflow file.
 caseW11() {
@@ -339,8 +341,8 @@ caseW11() {
   work="$(copySkills)"
   out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
   sum="$(vaultSyncSummary "$out")"
-  if [[ $rc -eq 0 && "$sum" == "3 0 " ]]; then
-    ok "W11 repo skills copy: exit 0, vault_sync_checked 3, no vault-sync-step finding"
+  if [[ $rc -eq 0 && "$sum" == "2 0 " ]]; then
+    ok "W11 repo skills copy: exit 0, vault_sync_checked 2, no vault-sync-step finding"
   else
     bad "W11 repo skills copy (rc=$rc summary='$sum')"
   fi
@@ -367,7 +369,21 @@ vaultSyncCase() {
   fi
 }
 
-caseW12() { vaultSyncCase W12 skills/a1-execute/workflows/02-execute.md; }
+# W12 (module level, spec 027 slice 5): a per-wave vault sync fence planted in 02-execute.md yields exactly one
+# sync_per_wave finding naming it. checkReadingPath is called directly with the helpers exported by workflow-lint.cjs.
+caseW12() {
+  local work got
+  work="$(copySkills)"
+  printf '\n```bash\nnode <repo>/_shared/a1-tools.cjs vault sync <project-slug> --phases\n```\n' >> "$work/skills/a1-execute/workflows/02-execute.md"
+  got="$(env -u A1_VAULT_ROOT node -e '
+    const l=require(process.argv[1]);
+    const r=require(process.argv[2]).checkReadingPath(process.argv[3],{extractBashFenceLines:l.extractBashFenceLines,VAULT_SYNC_CALL_RE:l.VAULT_SYNC_CALL_RE});
+    const f=r.findings.filter(x=>x.rule==="sync_per_wave");
+    process.stdout.write(f.length+" "+f.map(x=>require("path").basename(x.file)).join(","));
+  ' "$REPO_ROOT/_shared/lib/workflow-lint.cjs" "$REPO_ROOT/_shared/lib/workflow-lint-read.cjs" "$work" 2>&1)"
+  if [[ "$got" == "1 02-execute.md" ]]; then ok "W12 planted vault sync fence in 02-execute.md: one sync_per_wave finding"
+  else bad "W12 planted fence in 02-execute.md (got '$got')"; fi
+}
 caseW13() { vaultSyncCase W13 skills/a1-execute/workflows/03-verify.md; }
 caseW14() { vaultSyncCase W14 skills/a1-plan/workflows/04-audit.md; }
 
@@ -411,6 +427,8 @@ caseW16() {
 . "$(dirname "${BASH_SOURCE[0]}")/cases-flow-cli.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-parallel.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-verify-bg.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-budget.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-read.sh"
 
 caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8; caseW9; caseW10
 caseW11; caseW12; caseW13; caseW14; caseW15; caseW16
@@ -422,6 +440,12 @@ caseFL18; caseFL18b; caseFL19; caseFL20; caseFL20b; caseFL20c; caseFL21
 caseFC1; caseFC2; caseFC3; caseFC4; caseFC5; caseFC6
 casePG1; casePG2; casePG3; casePG4; casePG5; casePG6; casePG7
 caseVB1; caseVB2
+caseBG1; caseBG2; caseBG3; caseBG4; caseBG5; caseBG6; caseBG7; caseBG8; caseBG9; caseBG10; caseBG11; caseBG12
+caseBG13; caseBG14; caseBG15; caseCLI1
+caseRD1; caseRD2; caseRD3; caseRD4; caseRD5; caseRD6; caseRD7; caseRD8; caseRD9
+caseFB1; caseFB2; caseFB3; caseFB4; caseFB5; caseFB6
+caseSP1; caseSP2; caseSP3; caseSP4; caseSP5; caseVR1
+caseRP0; caseRP1; caseRP2; caseRP3; caseRP4; caseRP5; caseRP6; caseRP7; caseRP8
 
 printf '%s\n' "${results[@]}"
 echo "----"

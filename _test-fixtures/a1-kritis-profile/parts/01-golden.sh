@@ -309,6 +309,40 @@ A1_INS_EOF
   sed -e "/^loud when triaging\\.\$/r $work/ins-steps.txt" \
       -e "/^transition\\.\$/r $work/ins-close.txt" \
     "$work/simulated-current.s1" >"$work/simulated-current.stripped"
+  # Spec 027 slice 5 (FR-029/FR-030, 2026-11-23): the kritis pointer after the resolve line, the Marketing
+  # Gate replaced by one pointer line, the Isolation body replaced by three lines, one hard-rule line.
+  # Written out literally (not read from prompts.allowed-diff).
+  cat >"$work/ins-kritis.txt" <<'A1_INS_EOF'
+When it prints `kritis`, read `workflows/kritis.md` before Phase 1 and apply it to this run.
+A1_INS_EOF
+  cat >"$work/ins-market.txt" <<'A1_INS_EOF'
+
+After `done`, a customer-visible A1//office feature goes to the global skill `a1-landing-feature`, which asks the publication questions.
+
+A1_INS_EOF
+  cat >"$work/ins-isol.txt" <<'A1_INS_EOF'
+
+No feature code in the primary checkout: create the worktree with the `a1-worktree` skill before Wave 1 (never a raw git command).
+Push, PR, squash merge and teardown run in `a1-pr-review` (`skills/a1-pr-review/workflows/05-merge.md`, then `feature close`).
+Full convention, scope-claim order and push cadence: `_shared/parallel-spec-isolation.md`.
+A1_INS_EOF
+  cat >"$work/ins-hard.txt" <<'A1_INS_EOF'
+- If `origin/main` is red for reasons unrelated to this feature: STOP, do not layer on top, report to Robert.
+A1_INS_EOF
+  sed -e '/^in the phase flow\.$/,/^## Isolation Gate (HARD RULE/{' \
+      -e '/^in the phase flow\.$/b' \
+      -e '/^## Isolation Gate (HARD RULE/b' \
+      -e 'd' -e '}' \
+    "$work/simulated-current.stripped" >"$work/simulated-current.s5a"
+  sed -e '/^## Isolation Gate (HARD RULE/,/^`_shared\/parallel-spec-isolation\.md`\.$/{' \
+      -e '/^## Isolation Gate (HARD RULE/b' \
+      -e 'd' -e '}' \
+    "$work/simulated-current.s5a" >"$work/simulated-current.s5b"
+  sed -e "/^\\*\\*Profile resolve (every run/r $work/ins-kritis.txt" \
+      -e "/^in the phase flow\\.\$/r $work/ins-market.txt" \
+      -e "/^## Isolation Gate (HARD RULE/r $work/ins-isol.txt" \
+      -e "/^  are GREEN\\. Never cherry-pick as a merge workaround/r $work/ins-hard.txt" \
+    "$work/simulated-current.s5b" >"$work/simulated-current.stripped"
   cp "$GOLDEN/prompts/SKILL.md" "$work/golden.body"
   if ! node "$GOLDEN/apply-prompts-allowed.cjs" "$GOLDEN/prompts.allowed-diff" "SKILL.md" \
        "$work/golden.body" "$work/simulated-current.stripped" "$work/golden.applied" "$work/current.applied" 2>"$work/apply.err"; then

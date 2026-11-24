@@ -5,7 +5,12 @@
 // branch review). help.cjs interpolates the string in place; the rendered
 // --help output is byte-identical to the unsplit text.
 
-const { CONSENT_HELP } = require('./help-xprov-consent.cjs');
+const { CONSENT_HELP, XPROV_TOPICS_CONSENT } = require('./help-xprov-consent.cjs');
+const { XPROV_TOPICS_MAIN } = require('./help-xprov-topics.cjs');
+
+// spec 027 slice 5: the four Phase 4b topics (`xprov --help <topic>`), also part of `a1-tools --help`.
+const TOPIC_BLOCKS = Object.entries({ ...XPROV_TOPICS_CONSENT, ...XPROV_TOPICS_MAIN })
+  .map(([name, text]) => `  a1-tools xprov --help ${name}\n${text}`).join('\n');
 
 const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   Spec 009-cross-provider-review-gate. Cross-provider review
@@ -168,7 +173,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   (spec 016 FR-035, wave 8) the run fields xprov gate writes
                   itself: owner hand-offs, Codex runs (1 only for the first
                   line of a gate target: rounds and retries collapse), abort
-                  reason, recovered.
+                  reason, recovered; xprov gate adds the compact recovery list.
     snapshot --repo <path> --commit <sha> [--base <sha>] [--plan <file>] [--feedback <file>] | --remove <dir>
                   (xprov-snapshot.cjs, wave 5) fresh depth-limited fetch under
                   ~/.a1-xprov/snapshots/ (git init + fetch --depth 1 + checkout
@@ -322,7 +327,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   from the registry row and echoed in stdout, never applied here.
                   --round counts from 1; --timeout is at least 60 seconds (a shorter limit is a usage error, exit 2).
                   Self-recovery (spec 016 FR-024..028, FR-031; xprov-recover.cjs;
-                  recovery in stdout and in the log entry): runner_failed caused
+                  recovery in stdout, in the observation line, and (with A1_KEEP_REVIEW_LOGS=1) in the log entry): runner_failed caused
                   by network, timeout or HTTP 5xx is retried twice (30 s, 120 s);
                   a blocked answer is repeated once, a second one is not_applicable /
                   codex_blocked_fallback (load-check accepts it,
@@ -342,7 +347,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   allowlist_modified, every permit or store mismatch and round_cap
                   are never retried. One observation line per run that got past
                   the permit check (owner_handoffs, codex_runs, abort_reason,
-                  recovered).
+                  recovered, recovery).
                   A repository whose permit state is denied, on a registry row
                   with applies_to: permitted-repos, gets verdict not_applicable
                   (reason external_review_denied, exit 1, one log entry and one
@@ -529,6 +534,8 @@ ${CONSENT_HELP}
                   ENV: A1_XPROV_CODEX_HOME (optional; default ~/.codex-a1-review).
                   Fixture suite: _test-fixtures/a1-xprov/run-tests.sh (harness)
                   + parts/NN-<wave>.sh; runner fakes live in fake/, captured
-                  runner records in cases/ (each with a .meta provenance file).`;
+                  runner records in cases/ (each with a .meta provenance file).
+  Phase 4b topics (a1-tools xprov --help <topic>):
+${TOPIC_BLOCKS}`;
 
 module.exports = { XPROV_HELP };

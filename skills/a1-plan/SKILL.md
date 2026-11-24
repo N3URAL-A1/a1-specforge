@@ -46,7 +46,7 @@ paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
 | 2 | Map | `workflows/02-map.md` | a1-marco-mapper | MAP.md |
 | 3 | Plan | `workflows/03-plan.md` (incl. Depth Pass, `plan depth-check`) | a1-pablo-planner | PLAN.md (`## Depth Pass`) |
 | 4 | Audit | `workflows/04-audit.md` | a1-adam-auditor | AUDIT.md |
-| 4b | Cross-provider review | `workflows/04b-xprov-review.md` | — (orchestrator; `a1-tools xprov gate`, Codex via vendored runner) | XREVIEW.md, `xreview/index.json`, PLAN-REVIEW-LOG.md |
+| 4b | Cross-provider review | loaded by `workflows/04-audit.md` after `xprov permit-check` | — (orchestrator; `a1-tools xprov gate`, Codex via vendored runner) | XREVIEW.md, `xreview/index.json`, `PLAN-REVIEW-LOG.md` (only with `A1_KEEP_REVIEW_LOGS=1`) |
 
 **Audit loop:** If AUDIT.md verdict is FAIL, route back to Phase 3 (a1-pablo-planner in revision mode) with the AUDIT.md findings. Maximum 2 revision cycles.
 
@@ -62,7 +62,7 @@ PLAN.md sha256.
 **Design review (Phase 4b Step 1b, gate `design-review-xprov`):** each ADR (`docs/adr/`) or architecture document (`docs/architecture/`) that PLAN.md names and that has no pass goes to Codex, one file per call (`xprov design-targets --plan`); `warning` row, never a halt.
 
 **Retro:** the run closes with a mandatory Retro after Phase 4b — see
-`workflows/04-audit.md` (owner) and `04b-xprov-review.md` Step 4 for the
+`workflows/04-audit.md` (owner) and Phase 4b Step 4 for the
 `plan-review-xprov` `gates_fired` line — feeding `a1-evolve`'s pattern clustering.
 
 ## Storage
@@ -78,7 +78,7 @@ All artifacts live in `.a1/phases/<phase-name>/` in the project directory:
         ├── PLAN.md
         ├── AUDIT.md
         ├── XREVIEW.md            (Phase 4b, one section per review round)
-        ├── PLAN-REVIEW-LOG.md    (Phase 4b, append-only)
+        ├── PLAN-REVIEW-LOG.md    (Phase 4b, append-only, only with `A1_KEEP_REVIEW_LOGS=1`)
         └── xreview/
             ├── index.json
             └── plan-review-xprov-plan-r<N>.findings.json
@@ -107,4 +107,4 @@ The phase directory is created automatically. Phase names are kebab-case from th
 - Present the PLAN.md summary to the user after Phase 4b has routed (not after the
   audit alone) — they should confirm before executing
 - Never run `xprov waive` from this skill — a waiver is a human decision the
-  workflow only describes (`04b-xprov-review.md` Step 5)
+  workflow only describes (Phase 4b Step 5)

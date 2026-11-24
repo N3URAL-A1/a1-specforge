@@ -28,10 +28,10 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
   2-cycle limit but adds 1 to the retro `revisions` field. Reason: 04b records the PLAN.md
   sha256 and a1-execute binds it at Load (`--expect-sha`), so a fix after 04b costs a
   re-review (`_shared/agent-lessons.md#plan-probe-red-line`). Other MINORs stay notes.
-- **Then load `04b-xprov-review.md`** (Phase 4b, cross-provider plan review,
-  gate `plan-review-xprov`). The PLAN.md summary and the "Run `a1-execute`"
-  suggestion are given there, after the second provider has spoken — a PASS
-  audit alone no longer ends the pipeline.
+- **Then the permit state decides** (step below, after the vault mirror has started).
+  The PLAN.md summary and the "Run `a1-execute`" suggestion are given by Phase 4b
+  after the second provider has spoken, or by the denied branch — a PASS audit
+  alone no longer ends the pipeline.
 - **Before loading 04b, mirror the phase into the vault** (spec 010, FR-008):
   PLAN.md and AUDIT.md are final at this point, and the cockpit reads
   `project/<slug>/phases/` from the vault, never the repo. `<project-slug>` is
@@ -39,9 +39,9 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
   `--slug <slug>` instead of the positional slug, in the `vault sync` line (phases
   only) and in the `dashboard build` line alike. Anything 04b
   writes into the phase directory is picked up by the next sync (a1-execute
-  step 2b-v). The step is skipped silently when `A1_VAULT_ROOT` is not set
+  `03-verify.md`, at phase end). The step is skipped silently when `A1_VAULT_ROOT` is not set
   (tier repo-local), and a failed sync never blocks the pipeline. It runs in the
-  background before 04b: 04b does not wait for it, and its warnings appear in the
+  background before the permit step and 04b: neither waits for it, and its warnings appear in the
   log file named on stdout:
 
   <!-- a1:background id=vault-mirror join=no -->
@@ -58,6 +58,24 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
   ) > "$VMIRROR_LOG" 2>&1 &
   echo "vault mirror runs in the background, log: $VMIRROR_LOG"
   ```
+
+- **Permit state (spec 027 FR-028).** After the mirror has started, read the owner's permit
+  state. Only `denied` skips Phase 4b; every other outcome, an unreadable output included, loads it:
+
+  ```bash
+  PC_OUT="$(mktemp)"
+  node <repo>/_shared/a1-tools.cjs xprov permit-check > "$PC_OUT"; RC=$?
+  STATE="$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).state||"unknown"))}catch(e){process.stdout.write("unreadable")}' "$PC_OUT")"
+  rm -f "$PC_OUT"
+  echo "xprov permit-check exit=$RC state=$STATE"
+  ```
+
+  - `state=denied`, or exit 77 (an intent child: the sandbox refuses every `xprov` call) — the **denied branch**.
+    Print `ℹ Cross-provider plan review not applicable — the owner denied external review for this repository (permit-check state denied); Reinhard-only, continuing.`,
+    show the PLAN.md summary (goal, wave count, success criteria) and suggest "Run `a1-execute`". Add to the retro
+    `{id: plan-review-xprov, verdict: not_applicable, caught: false}` plus the issue tag `xprov_not_applicable`; design review
+    is not applicable either. Nothing else is read.
+  - Every other outcome: load `04b-xprov-review.md` (Phase 4b, cross-provider plan review, gate `plan-review-xprov`).
 
 ### If verdict is FAIL
 - Inform user: "Plan has <N> blocker(s):"
@@ -104,7 +122,7 @@ clustering. A run with zero findings still gets an entry (`audit_findings: 0`).
 **`gates_fired` is required** — a1-plan runs registered gates (`plan-audit`,
 `plan-review-xprov`, `depth-pass` on every plan, and `lane-split` on plans with a `lanes:` block). One
 line per gate that ran, ids verbatim from `_shared/gates-registry.md`;
-`04b-xprov-review.md` Step 4 defines the `plan-review-xprov` line. Add
+Phase 4b Step 4 defines the `plan-review-xprov` line (on the denied branch: the row above). Add
 `xprov_waived` to `issues` (the base field of `_shared/retro-template.md`;
 a1-execute's retro uses its own `issue_classes` — a1-evolve reads both) when a
 waiver exists for this phase. Validate before appending — capture-then-check,

@@ -261,10 +261,10 @@ HAND="$(awk '/^## Hand-offs/{f=1} f' "$SK/a1-pr-review/SKILL.md")"
 # spec 027 FR-035: run record block after the merge and the retros, before the worktree exit (review R1)
 RR_POS="$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const i=(re)=>t.search(re);const r=i(/^1\. Retros, each with/m),b=i(/^node .*run record /m),w=i(/^\d\. `a1-worktree` exit `discard`/m);process.stdout.write(r>0&&r<b&&b<w?"ok":"bad:"+[r,b,w].join(","))' "$MRG")"
 if [ "$RR_POS" = "ok" ]; then pass_case "run record block sits after the retros step and before the worktree exit step"; else fail_case "run record block position: $RR_POS (want retros < run record < worktree exit)"; fi
-# spec 027 FR-026 (Task 9.2): the feature close block F sits between the run record and the live probes: 7 blocks, DCMGRFP.
-if [ "$(bj 'b.length')" = "7" ]; then pass_case "05-merge.md has exactly 7 fenced bash blocks (count, incl. the feature close block F)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 7)"; fi
-order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":/run record/.test(x)?"R":/probe run/.test(x)?"P":/feature close/.test(x)?"F":"?").join("")')"
-if [ "$order" = "DCMGRFP" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge, run record, feature close (F), live probes"; else fail_case "05-merge.md block order is '$order' (want DCMGRFP)"; fi
+# spec 027 FR-026 (Task 9.2): the feature close block F sits between the run record and the live probes: 7 blocks, DCMGRFP; spec 027 slice 5 adds the retro decision block T: 8 blocks, DCMGTRFP.
+if [ "$(bj 'b.length')" = "8" ]; then pass_case "05-merge.md has exactly 8 fenced bash blocks (count, incl. the retro decision block T and the feature close block F)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 8)"; fi
+order="$(bj 'b.map(x=>/prose_required/.test(x)?"T":/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":/run record/.test(x)?"R":/probe run/.test(x)?"P":/feature close/.test(x)?"F":"?").join("")')"
+if [ "$order" = "DCMGTRFP" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge, retro decision (T), run record, feature close (F), live probes"; else fail_case "05-merge.md block order is '$order' (want DCMGTRFP)"; fi
 if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
   pass_case "no gh pr merge before the three checks: exactly one merge command, in the fourth block (the probe block follows it)"
 else fail_case "gh pr merge appears outside the fourth fenced block"; fi
@@ -332,12 +332,12 @@ nb="$(node -e '
   console.log(n+":"+bad);' "$MRG")"
 if [ "${nb#*:}" = "0" ] && [ "${nb%%:*}" -ge 1 ]; then pass_case "05-merge non-bash fences (${nb%%:*}) contain neither the merge command nor exit"
 else fail_case "05-merge non-bash fences: count:bad = $nb (want >=1 fence, 0 bad)"; fi
-# No stale squash command with --delete-branch in skills/ or _shared/*.md. Excluded on purpose:
-#   skills/a1-new-feature/SKILL.md - held by the 006-specforge-kritis-profile code-scope claim; follow-up: change it to
-#   the form without --delete-branch once 006 releases the claim, then drop this exclusion.
+# No stale squash command with --delete-branch in skills/ or _shared/*.md.
 #   _test-fixtures/a1-gates-lint/corpus/ is not scanned (static corpus copies).
-stale="$(grep -rIl -e '--squash --delete-branch' "$SK" "$(dirname "$SK")"/_shared/*.md 2>/dev/null | grep -v 'skills/a1-new-feature/SKILL.md$' || true)"
-if [ -z "$stale" ]; then pass_case "no stale squash merge command with --delete-branch in skills/ and _shared/*.md (a1-new-feature/SKILL.md excluded: 006 claim)"
+#   Spec 027 slice 5: the a1-new-feature Isolation cut removed the last hit, so the exclusion of
+#   skills/a1-new-feature/SKILL.md is gone.
+stale="$(grep -rIl -e '--squash --delete-branch' "$SK" "$(dirname "$SK")"/_shared/*.md 2>/dev/null || true)"
+if [ -z "$stale" ]; then pass_case "no stale squash merge command with --delete-branch in skills/ and _shared/*.md"
 else fail_case "stale squash merge command with --delete-branch in: $stale"; fi
 
 # ---------- spec 027 FR-035: run record guard (RR-guard) ----------
@@ -361,6 +361,7 @@ if [ -z "$(find "$RRT" -name PWNED)" ] && [ "$rc" = "2" ] && [ "$(wc -l < "$RRT/
 
 . "$FIXTURE_DIR/cases-review-record.sh"
 . "$FIXTURE_DIR/cases-close-block.sh"
+. "$FIXTURE_DIR/cases-retro-step.sh"
 
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"

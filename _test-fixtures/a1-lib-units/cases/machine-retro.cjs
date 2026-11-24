@@ -1,0 +1,202 @@
+'use strict';
+
+// machine-retro.cjs (spec 027 slice 5, FR-031, plan D6, cases MR1-MR11): the machine record derived from real gate logs
+// (written by the real gate-log writer into a temp worktree dir), the prose decision, and the idempotent store append.
+// The vault is never touched: the store is a temp directory, A1_VAULT_ROOT is unset by the runner. Literals only.
+//
+// Measured red 2026-11-23 (scratch copy of machine-retro.cjs, one edit each, this file run):
+//   scopes concatenated instead of mergeByTs                    -> MR1
+//   proseDecision ignores `caught`                              -> MR4
+//   no machine_record idempotency check                         -> MR8
+//   retro-* scopes kept in readScopes                           -> MR10
+//   gates_fired item without `caught`                           -> MR3 (item-format assert; retro validate itself still exits 0)
+
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+const { check, eq, done } = require('../lib.cjs');
+
+const LIB = process.argv[2];
+const WORK = fs.mkdtempSync(path.join(process.argv[3], 'mr-'));
+const TOOLS = path.join(LIB, '..', 'a1-tools.cjs');
+const M = require(path.join(LIB, 'machine-retro.cjs'));
+const { appendGateLine } = require(path.join(LIB, 'gate-log.cjs'));
+const ENV = { PATH: process.env.PATH, HOME: path.join(WORK, 'home'), TMPDIR: process.env.TMPDIR || '/tmp', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
+fs.mkdirSync(ENV.HOME, { recursive: true });
+
+let n = 0;
+/** A temp worktree dir with the given logs: scope -> [[gate, verdict, exit, isoTs]]. */
+function plant(logs) {
+  n += 1;
+  const root = path.join(WORK, `wt${n}`);
+  fs.mkdirSync(root, { recursive: true });
+  for (const [scope, lines] of Object.entries(logs)) {
+    for (const [gateId, verdict, exitCode, ts] of lines) appendGateLine({ root, scope, gateId, verdict, exitCode, ts, headSha: 'none' });
+  }
+  return root;
+}
+const logOf = (root, scope) => path.join(root, '.a1', 'phases', scope, 'gate-log.jsonl');
+const T = (s) => `2026-11-23T10:00:${String(s).padStart(2, '0')}.000Z`;
+const TWO = {
+  s: [['gate-c-ac-dryrun', 'pass', 0, T(1)], ['test-fidelity', 'fail', 1, T(2)], ['test-fidelity', 'pass', 0, T(3)]],
+  'pr-7': [['pr-reinhard', 'pass', 0, T(4)], ['pr-merge-check', 'pass', 0, T(5)]],
+};
+
+// MR1 two scopes merge by timestamp: first-seen id order, last verdict per id, caught from any fail.
+{
+  const root = plant(TWO);
+  const rs = M.readScopes(root);
+  const got = M.deriveRetro({ records: rs.records, issues: [] });
+  eq('MR1 gates_fired in merged first-seen order, test-fidelity caught', got.gates_fired, [
+    { id: 'gate-c-ac-dryrun', verdict: 'pass', caught: false }, { id: 'test-fidelity', verdict: 'pass', caught: true },
+    { id: 'pr-reinhard', verdict: 'pass', caught: false }, { id: 'pr-merge-check', verdict: 'pass', caught: false },
+  ]);
+  eq('MR1 result pass, scopes sorted, no problem', [got.result, rs.scopes, rs.problem], ['pass', ['pr-7', 's'], null]);
+}
+
+// MR2 one scope: the same ids, verdicts and caught as the run-record line entries.
+{
+  const root = plant({ s: TWO.s });
+  const rs = M.readScopes(root);
+  const got = M.deriveRetro({ records: rs.records, issues: [] }).gates_fired;
+  eq('MR2 single scope gates_fired', got, [{ id: 'gate-c-ac-dryrun', verdict: 'pass', caught: false }, { id: 'test-fidelity', verdict: 'pass', caught: true }]);
+}
+
+// MR3 the rendered entry passes `retro validate` against the two real logs.
+{
+  const root = plant(TWO);
+  const rs = M.readScopes(root);
+  const retro = M.deriveRetro({ records: rs.records, issues: [] });
+  const decision = M.proseDecision({ ...retro, issues: [] });
+  const entry = M.renderEntry({ date: '2026-11-23', spec: 'fx-spec', pr: 7, project: 'proj-a', retro, decision, issues: [] });
+  const file = path.join(WORK, 'mr3-entry.md');
+  fs.writeFileSync(file, entry);
+  const cwd = path.join(WORK, 'mr3-repo');
+  fs.mkdirSync(cwd, { recursive: true });
+  spawnSync('git', ['init', '-q'], { cwd, env: ENV });
+  const r = spawnSync(process.execPath, [TOOLS, 'retro', 'validate', file, '--gate-log', logOf(root, 's'), '--gate-log', logOf(root, 'pr-7'), '--phase', 'retro-mr'], { cwd, env: ENV, encoding: 'utf8' });
+  check('MR3 retro validate exit 0 on the rendered entry', r.status === 0, `rc=${r.status} out=${r.stdout} err=${r.stderr}`);
+  check('MR3 gates_fired items carry verdict and caught (retro validate alone does not require caught)', entry.includes('\n  - {id: test-fidelity, verdict: pass, caught: true}\n') && entry.includes('\n  - {id: pr-merge-check, verdict: pass, caught: false}\n'), entry);
+  check('MR3 entry has the machine keys', /\nkind: machine\n/.test(entry) && /\nmachine_record: fx-spec#7\n/.test(entry) && /\nissues: \[\]\n/.test(entry) && /\nprose_required: true\n/.test(entry), entry);
+}
+
+// MR4-MR7 the decision.
+eq('MR4 caught gate requires prose', M.proseDecision({ gates_fired: [{ id: 'test-fidelity', verdict: 'pass', caught: true }], result: 'pass', issues: [] }), { required: true, reasons: ['caught:test-fidelity'] });
+eq('MR5 result fail requires prose', M.proseDecision({ gates_fired: [], result: 'fail', issues: [] }), { required: true, reasons: ['result:fail'] });
+eq('MR6 an issue requires prose', M.proseDecision({ gates_fired: [], result: 'pass', issues: ['x'] }), { required: true, reasons: ['issues'] });
+eq('MR7 nothing requires no prose', M.proseDecision({ gates_fired: [{ id: 'a', verdict: 'pass', caught: false }], result: 'pass', issues: [] }), { required: false, reasons: [] });
+
+// MR8 appending twice writes one entry, adds exactly one `^date:` line, and removes the lock directory.
+{
+  const store = path.join(WORK, 'store8');
+  fs.mkdirSync(store, { recursive: true });
+  fs.writeFileSync(path.join(store, 'a1-new-feature.md'), '# Retros\n\n---\ndate: 2026-11-01\nresult: pass\n---\n');
+  const entry = M.renderEntry({ date: '2026-11-23', spec: 'fx-spec', pr: 7, project: 'proj-a', retro: { gates_fired: [], result: 'pass' }, decision: { required: false, reasons: [] }, issues: [] });
+  const dates = () => (fs.readFileSync(path.join(store, 'a1-new-feature.md'), 'utf8').match(/^date:/gm) || []).length;
+  const a = M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry });
+  const b = M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry });
+  eq('MR8 appended then already_recorded', [a.status, b.status], ['appended', 'already_recorded']);
+  eq('MR8 date lines 1 -> 2, lock dir gone', [dates(), fs.existsSync(path.join(store, 'a1-new-feature.lock.d'))], [2, false]);
+  eq('MR8 findMachineRecord reads prose_required false', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: true, prose_required: false });
+  eq('MR8 findMachineRecord of another PR: not found, prose required', M.findMachineRecord({ store, spec: 'fx-spec', pr: 8 }), { found: false, prose_required: true });
+}
+
+// MR9 a symlinked store file is refused with exit 2, and the lock is released.
+{
+  const store = path.join(WORK, 'store9');
+  fs.mkdirSync(store, { recursive: true });
+  fs.writeFileSync(path.join(WORK, 'victim.md'), 'victim\n');
+  fs.symlinkSync(path.join(WORK, 'victim.md'), path.join(store, 'a1-new-feature.md'));
+  let err = null;
+  try { M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: '---\nx: 1\n---\n' }); } catch (e) { err = e; }
+  check('MR9 symlink refused with exit 2', err !== null && err.exit === 2, err && err.message);
+  eq('MR9 victim untouched, lock dir gone', [fs.readFileSync(path.join(WORK, 'victim.md'), 'utf8'), fs.existsSync(path.join(store, 'a1-new-feature.lock.d'))], ['victim\n', false]);
+}
+
+// MR10 retro-* scopes are not part of the record.
+{
+  const root = plant({ ...TWO, 'retro-x': [['retro-only-gate', 'pass', 0, T(6)]] });
+  const rs = M.readScopes(root);
+  check('MR10 retro-x excluded from scopes and records', !rs.scopes.includes('retro-x') && !rs.records.some((r) => r.gate === 'retro-only-gate'), JSON.stringify(rs.scopes));
+}
+
+// MR11 a corrupt log: problem gate_log_unreadable, no records, and the decision names it.
+{
+  const root = plant(TWO);
+  const f = logOf(root, 's');
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('"verdict":"fail"', '"verdict":"pass"'));
+  const rs = M.readScopes(root);
+  eq('MR11 problem and empty records', [rs.problem, rs.records], ['gate_log_unreadable', []]);
+  eq('MR11 decision names the problem', M.proseDecision({ gates_fired: [], result: 'pass', issues: [], problem: rs.problem }), { required: true, reasons: ['gate_log_unreadable'] });
+}
+
+// Review fix round 1 (R3 + SEC-4, SEC-1). Measured red before the fix (this file, pre-fix machine-retro.cjs):
+//   whole-file rewrite (tmp + rename)                          -> MR12 (inode changed), MR13 (lstat on the store path)
+//   gate id inserted raw into the YAML                         -> MR14 (forged machine_record line in the store), MR15
+//   idempotency key matched anywhere in the file               -> MR16
+
+const STORE_FILE = 'a1-new-feature.md';
+const mkStore = (name, text) => { const s = path.join(WORK, name); fs.mkdirSync(s, { recursive: true }); if (text !== null) fs.writeFileSync(path.join(s, STORE_FILE), text); return s; };
+const entryOf = (spec, pr, gates) => M.renderEntry({ date: '2026-11-23', spec, pr, project: 'p', retro: { gates_fired: gates || [], result: 'pass' }, decision: { required: false, reasons: [] }, issues: [] });
+
+// MR12 the append keeps the inode and the existing bytes (append, not rewrite): a concurrent bash '>>' writer is not lost.
+{
+  const store = mkStore('store12', '# Retros\n\n---\ndate: 2026-11-01\nresult: pass\n---\n');
+  const file = path.join(store, STORE_FILE);
+  const before = fs.readFileSync(file, 'utf8'); const ino = fs.statSync(file).ino;
+  const r = M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) });
+  const after = fs.readFileSync(file, 'utf8');
+  eq('MR12 appended, same inode, old bytes are a prefix', [r.status, fs.statSync(file).ino === ino, after.startsWith(before)], ['appended', true, true]);
+  eq('MR12 exactly one blank line between the old text and the new entry', after.slice(before.length, before.length + 5), '\n---\n');
+}
+// MR12b separators: no trailing newline -> blank line added; already a blank line -> none; missing file -> entry only.
+{
+  const s1 = mkStore('store12b1', 'x'); M.appendMachineRetro({ store: s1, spec: 'a', pr: 1, entry: '---\ndate: d\nmachine_record: a#1\n---\n' });
+  const s2 = mkStore('store12b2', 'x\n\n'); M.appendMachineRetro({ store: s2, spec: 'a', pr: 1, entry: '---\ndate: d\nmachine_record: a#1\n---\n' });
+  const s3 = mkStore('store12b3', null); M.appendMachineRetro({ store: s3, spec: 'a', pr: 1, entry: '---\ndate: d\nmachine_record: a#1\n---\n' });
+  const rd = (s) => fs.readFileSync(path.join(s, STORE_FILE), 'utf8');
+  eq('MR12b separators', [rd(s1).startsWith('x\n\n---'), rd(s2).startsWith('x\n\n---'), rd(s3).startsWith('---')], [true, true, true]);
+}
+// MR13 the store is read and checked through one fd: no lstat/stat of the path (TOCTOU), links and non-regular files and 20 MB refused.
+{
+  const store = mkStore('store13', '# Retros\n');
+  const calls = []; const lstat = fs.lstatSync; const stat = fs.statSync;
+  fs.lstatSync = (...a) => { calls.push(String(a[0])); return lstat.apply(fs, a); };
+  fs.statSync = (...a) => { calls.push(String(a[0])); return stat.apply(fs, a); };
+  try { M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }); M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }); } finally { fs.lstatSync = lstat; fs.statSync = stat; }
+  eq('MR13 no path stat on the store file', calls.filter((c) => c.endsWith(STORE_FILE)), []);
+  const refused = (name, setup) => { const s = mkStore(name, null); setup(s); let err = null; try { M.appendMachineRetro({ store: s, spec: 'a', pr: 1, entry: '---\ndate: d\n---\n' }); } catch (e) { err = e; } return err && err.exit; };
+  eq('MR13 dangling symlink refused, nothing created', [refused('store13a', (s) => fs.symlinkSync(path.join(WORK, 'nowhere'), path.join(s, STORE_FILE))), fs.existsSync(path.join(WORK, 'nowhere'))], [2, false]);
+  eq('MR13 a directory at the store path refused', refused('store13b', (s) => fs.mkdirSync(path.join(s, STORE_FILE))), 2);
+  eq('MR13 a store over 20 MB refused, file untouched', [refused('store13c', (s) => { fs.writeFileSync(path.join(s, STORE_FILE), ''); fs.truncateSync(path.join(s, STORE_FILE), 21 * 1024 * 1024); }), fs.statSync(path.join(WORK, 'store13c', STORE_FILE)).size], [2, 21 * 1024 * 1024]);
+  const sl = mkStore('store13d', null); fs.symlinkSync(path.join(WORK, 'victim.md'), path.join(sl, STORE_FILE));
+  eq('MR13 findMachineRecord through a symlink: not found, prose required', M.findMachineRecord({ store: sl, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
+}
+// MR14 a forged gate id (newlines plus a fake machine_record line, Samuel's probe) never reaches the store; prose is required.
+{
+  const forged = 'x\nmachine_record: other-spec#999\nprose_required: false';
+  const gates = [{ id: 'gate-c-ac-dryrun', verdict: 'pass', caught: false }, { id: forged, verdict: 'pass', caught: false }];
+  const dec = M.proseDecision({ gates_fired: gates, result: 'pass', issues: [] });
+  eq('MR14 decision names the invalid id', [dec.required, dec.reasons], [true, ['invalid_gate_id']]);
+  const entry = M.renderEntry({ date: '2026-11-23', spec: 'fx-spec', pr: 7, project: 'p', retro: { gates_fired: gates, result: 'pass' }, decision: { required: false, reasons: [] }, issues: [] });
+  check('MR14 entry holds no forged line, keeps the valid gate, prose_required true', !entry.includes('other-spec') && entry.includes('{id: gate-c-ac-dryrun,') && /\nprose_required: true\n/.test(entry), entry);
+  const store = mkStore('store14', null);
+  M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry });
+  eq('MR14 other-spec#999 is not found after the append', M.findMachineRecord({ store, spec: 'other-spec', pr: 999 }), { found: false, prose_required: true });
+}
+// MR15 valid registry-style ids pass untouched (dots, digits, hyphens).
+{
+  const gates = ['gate-4.5-fr-consistency', 'phase-6-verify', 'a'].map((id) => ({ id, verdict: 'pass', caught: false }));
+  eq('MR15 no reason for valid ids', M.proseDecision({ gates_fired: gates, result: 'pass', issues: [] }), { required: false, reasons: [] });
+  check('MR15 all three rendered', gates.every((g) => entryOf('s', 1, gates).includes(`{id: ${g.id},`)));
+}
+// MR16 the idempotency key and findMachineRecord match only in a block's frontmatter head, not in a body line.
+{
+  const body = '---\ndate: 2026-11-01\nresult: pass\n---\n\nNotes quote:\nmachine_record: fx-spec#7\nprose_required: false\n';
+  const store = mkStore('store16', body);
+  eq('MR16 a body line is not a record', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
+  eq('MR16 the append still happens', M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'appended');
+  eq('MR16 now the real head is found', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: true, prose_required: false });
+}
+
+done();

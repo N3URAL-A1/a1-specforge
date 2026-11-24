@@ -160,9 +160,8 @@ Surface error to user. Do not continue.
 
 ### 2b-g. Per-wave deterministic gates (spec 017)
 
-Runs once per wave in the COMPLETE branch, after the commit-landed gate and before
-2b-v. The call carries `--phase <phase_name>` (the gate-log scope) and its exit code is
-tested. **Any non-zero exit stops the wave**: no 2b-v, no 2c checkpoint, no next wave. Fix
+Runs once per wave in the COMPLETE branch, after the commit-landed gate. The call carries `--phase <phase_name>` (the gate-log scope) and its exit code is
+tested. **Any non-zero exit stops the wave**: no 2c checkpoint, no next wave. Fix
 the cause and re-run the call. The calls run in this order:
 
 ```bash
@@ -204,7 +203,7 @@ Reading the `verify run` record (spec 028): name every `skipped_on_host` id in t
 
 ### 2b-d. Design review (only waves that changed a design file)
 
-Spec 025 FR-013. Runs once per wave in the COMPLETE branch, after 2b-g has passed and before 2b-v. Only
+Spec 025 FR-013. Runs once per wave in the COMPLETE branch, after 2b-g has passed. Only
 design files are reviewed: ADRs under `docs/adr/` and documents under `docs/architecture/` that the wave
 changed. A code diff is never sent. `design-targets` reads the wave diff against `"$PRE_WAVE_HEAD"` and lists
 only those design files that have no pass on their current body; an empty list means skip this block.
@@ -239,33 +238,6 @@ and continue (the row is `warning`); `not_applicable` (no permit, `codex_unavail
 here. Record one `gates_fired` line per file in the retro: `{id: design-review-xprov, verdict: <pass|fail|not_applicable>, caught: false}`.
 Multi-lane: run per lane with the lane's own `$PRE_WAVE_HEAD` and `$WORK_PATH`.
 
-### 2b-v. Vault phase mirror (spec 010, FR-008)
-
-Runs once per wave in the COMPLETE branch — after 2b-g has passed and before the 2c
-checkpoint. The
-executor has updated STATUS.md for this wave; the vault cockpit reads
-`project/<slug>/phases/` from the vault, never the repo, so without this step
-it shows the state before the wave. Run it from `$WORK_PATH` — `vault sync`
-mirrors the checkout it is started in, and the primary checkout does not
-carry this wave's STATUS.md (same silent failure as the commit-landed gate).
-Multi-lane runs: once per lane wave, from that lane's `$WORK_PATH`.
-
-`<project-slug>` is the `project:` of `docs/product/ROADMAP.md`; a repo
-without a roadmap passes `--slug <slug>` instead, to the `vault sync` line (phases
-only) and to the `dashboard build` line alike. Skipped
-silently when `A1_VAULT_ROOT` is not set (tier repo-local). A failed sync is a
-warning in the 2c summary, never a reason to stop the wave:
-
-```bash
-if [ -n "${A1_VAULT_ROOT:-}" ]; then
-  VSYNC_OUT="$(mktemp)"
-  (cd "$WORK_PATH" && node <repo>/_shared/a1-tools.cjs vault sync <project-slug> --phases) > "$VSYNC_OUT"; RC=$?
-  if [ $RC -ne 0 ]; then echo "⚠ vault sync --phases exit=$RC — vault mirror not updated, continuing (stderr above, JSON in $VSYNC_OUT)"; fi
-  (cd "$WORK_PATH" && node <repo>/_shared/a1-tools.cjs dashboard build <project-slug>) >/dev/null; RC=$?
-  if [ $RC -ne 0 ]; then echo "⚠ dashboard build exit=$RC — dashboard not refreshed, continuing"; fi
-fi
-```
-
 ### 2c. Wave summary and next-check
 
 Present wave summary:
@@ -274,7 +246,6 @@ Wave <N> — <name> ✓ Complete
 Tasks done: <N>/<N>
 Commits: <list>
 Deviations: <list or "none">
-Vault mirror: <✓ synced | ⚠ sync exit <RC> | – no vault root>
 
 → Next: Wave <N+1> — <name> (<N> tasks)
 ```

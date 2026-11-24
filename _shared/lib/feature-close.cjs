@@ -10,6 +10,10 @@
 // fixtures: it must be absolute, is reported (`gh_bin: "override"`), and its merged-PR verdicts delete only when the fixture
 // marker A1_FEATURE_CLOSE_TEST=1 is set; otherwise only the git-provable ancestry rule deletes.
 // Shared state is never committed here (push-cadence P3): a tracked, changed .a1/reservations.json is only reported.
+// Spec 027 slice 5 (FR-031, plan D6): the close plan is checkPr, checkRemote, findWorktree, recordRuns, machineRetro, exitWorktree, ...
+// machineRetro appends ONE machine record per PR to the learning store before the worktree (and its gate logs) is gone; it is not
+// part of the delete path and fails closed (an exit-2 store error stops the run before the worktree exit). `--check-only` ends with
+// decideRetro and prints `retro: {gates_fired, result, prose_required, reasons}`; `--issues <tags>` forces prose_required.
 
 const fs = require('fs');
 const path = require('path');
@@ -21,12 +25,15 @@ const { envWithoutGitRedirects } = require('./git-env.cjs');
 const { SCOPE_RE } = require('./gate-log.cjs');
 const { listGateLogs } = require('./worktree-gatelog.cjs');
 const { repoProjectSlug } = require('./project-slug.cjs');
+const { storeDir } = require('./run-record.cjs');
+const MR = require('./machine-retro.cjs');
 
 const FACADE = path.join(__dirname, '..', 'a1-tools.cjs');
 const PR_RE = /^[1-9][0-9]{0,6}$/;
+const ISSUES_RE = /^[a-z0-9][a-z0-9_-]{0,40}(,[a-z0-9][a-z0-9_-]{0,40}){0,19}$/;
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const STAGES = Object.freeze(['started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done']);
-const USAGE = 'a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only] | feature close --cleanup-only [--repo <dir>]';
+const USAGE = 'a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only] [--issues <tags>] | feature close --cleanup-only [--repo <dir>]';
 
 class CloseError extends Error {
   constructor(reason, step, detail) { super(detail || reason); this.reason = reason; this.step = step; this.detail = detail || ''; }
@@ -58,14 +65,16 @@ function parseJson(text, reason, step) {
   try { return JSON.parse(text); } catch (_e) { throw new CloseError(reason, step, `unparseable output: ${String(text).slice(0, 120)}`); }
 }
 
-/** @returns {{by:string|null,pr:number|null,repo:string,spec:string|null,worktree:string|null,cleanupOnly:boolean,checkOnly:boolean}} @throws UsageError */
+/** @returns {{by:string|null,pr:number|null,repo:string,spec:string|null,worktree:string|null,cleanupOnly:boolean,checkOnly:boolean,issues:string[]}} @throws UsageError */
 function parseArgs(rest) {
-  const f = parseFlags(rest, { by: 'value', pr: 'value', repo: 'value', spec: 'value', worktree: 'value', 'cleanup-only': 'bool', 'check-only': 'bool' });
+  const f = parseFlags(rest, { by: 'value', pr: 'value', repo: 'value', spec: 'value', worktree: 'value', issues: 'value', 'cleanup-only': 'bool', 'check-only': 'bool' });
   if (f._.length > 0) throw new UsageError(`unexpected argument ${JSON.stringify(String(f._[0]).slice(0, 60))}`);
   const clean = f['cleanup-only'] === true;
   const checkOnly = f['check-only'] === true;
   if (clean && checkOnly) throw new UsageError('--cleanup-only and --check-only exclude each other');
   if (clean && (f.by !== undefined || f.pr !== undefined || f.spec !== undefined || f.worktree !== undefined)) throw new UsageError('--cleanup-only takes only --repo');
+  if (clean && f.issues !== undefined) throw new UsageError('--cleanup-only takes only --repo');
+  if (f.issues !== undefined && (typeof f.issues !== 'string' || !ISSUES_RE.test(f.issues))) throw new UsageError('--issues must be 1-20 comma-separated tags (a-z, 0-9, _ -)');
   if (!clean) {
     if (typeof f.by !== 'string' || !SCOPE_RE.test(f.by) || f.by.includes('..')) throw new UsageError('--by must be a safe spec id (letters, digits, . _ -)');
     if (typeof f.pr !== 'string' || !PR_RE.test(f.pr)) throw new UsageError('--pr must be a positive integer of at most 7 digits');
@@ -77,7 +86,7 @@ function parseArgs(rest) {
   let isDir = false;
   try { isDir = fs.statSync(repo).isDirectory(); } catch (_e) { /* not there */ }
   if (!isDir) throw new UsageError('--repo is not an existing directory');
-  return { by: clean ? null : f.by, pr: clean ? null : Number(f.pr), repo: path.resolve(repo), spec: f.spec === undefined ? null : f.spec, worktree: f.worktree === undefined ? null : f.worktree, cleanupOnly: clean, checkOnly };
+  return { by: clean ? null : f.by, pr: clean ? null : Number(f.pr), repo: path.resolve(repo), spec: f.spec === undefined ? null : f.spec, worktree: f.worktree === undefined ? null : f.worktree, cleanupOnly: clean, checkOnly, issues: f.issues === undefined ? [] : f.issues.split(',') };
 }
 
 /** Step 1: the git toplevel of --repo, which must be a primary checkout. @returns {string} */
@@ -148,6 +157,48 @@ function recordRuns(ctx) {
     if (r.code !== 0) ctx.warnings.push(`run record ${scope} exit ${r.code}: ${r.err.trim().slice(0, 120)}`);
   }
   return ctx.steps.push({ step: 'record-runs', result: scopes.length ? 'done' : 'skipped' });
+}
+
+/** The learning-store directory, or null when there is none (exit 1 of `run record`: a warning, not a failure). */
+function storeOrNull() {
+  try { return storeDir(); } catch (e) { if (e && e.exit === 1) return null; throw e; }
+}
+
+const retroView = (retro, decision, source) => ({ gates_fired: retro.gates_fired, result: retro.result, prose_required: decision.required, reasons: decision.reasons, source });
+
+/** Last step of `--check-only` (D6): the prose decision from the worktree logs, else from the stored machine record, else `no_record`. */
+function decideRetro(ctx) {
+  if (ctx.entry) {
+    const rs = MR.readScopes(ctx.entry.worktree_path);
+    const retro = MR.deriveRetro({ records: rs.records, issues: ctx.opts.issues });
+    ctx.retro = retroView(retro, MR.proseDecision({ ...retro, issues: ctx.opts.issues, problem: rs.problem }), 'worktree');
+  } else {
+    const store = storeOrNull();
+    const rec = store === null ? { found: false, prose_required: true } : MR.findMachineRecord({ store, spec: ctx.opts.by, pr: ctx.opts.pr });
+    const reasons = !rec.found ? ['no_record'] : [...(rec.prose_required ? ['stored_record'] : []), ...(ctx.opts.issues.length ? ['issues'] : [])];
+    ctx.retro = { gates_fired: [], result: null, prose_required: rec.prose_required || ctx.opts.issues.length > 0, reasons, source: rec.found ? 'stored' : 'none' };
+  }
+}
+
+/** Step 5b (D6): append the machine record before the worktree exit. No store: warning + skipped; exit-2 store error: step_failed. */
+function machineRetro(ctx) {
+  const skip = (why) => { if (why) ctx.warnings.push(`machine-retro: ${why}`); return ctx.steps.push({ step: 'machine-retro', result: 'skipped' }); };
+  if (!ctx.entry) return skip(null);
+  const rs = MR.readScopes(ctx.entry.worktree_path);
+  const retro = MR.deriveRetro({ records: rs.records, issues: ctx.opts.issues });
+  const decision = MR.proseDecision({ ...retro, issues: ctx.opts.issues, problem: rs.problem });
+  ctx.retro = retroView(retro, decision, 'worktree'); // set before any skip: the logs die with the worktree exit
+  const store = storeOrNull();
+  if (store === null) return skip('no learning store; no machine record written');
+  if (rs.problem) return skip(`${rs.problem}; no machine record written`);
+  if (rs.records.length === 0) return skip(null);
+  const entry = MR.renderEntry({ date: new Date().toISOString().slice(0, 10), spec: ctx.opts.by, pr: ctx.opts.pr, project: repoProjectSlug(ctx.repo), retro, decision, issues: ctx.opts.issues });
+  let r;
+  try { r = MR.appendMachineRetro({ store, spec: ctx.opts.by, pr: ctx.opts.pr, entry }); } catch (e) {
+    if (e && e.exit === 2) throw new CloseError('step_failed', 'machine-retro', String(e.message).slice(0, 200));
+    throw e;
+  }
+  return ctx.steps.push({ step: 'machine-retro', result: r.status === 'appended' ? 'done' : 'skipped' });
 }
 
 /** Step 6: `worktree exit --mode discard`, never --force-discard. */
@@ -299,19 +350,21 @@ function pendingSharedState(ctx) {
 
 /** @param {object} opts parsed arguments @returns {{ok, mode, steps, deleted, kept, warnings, reservations_commit_pending}} */
 function closeFeature(opts) {
-  const ctx = { opts, repo: null, specPath: null, head: null, base: null, entry: null, steps: [], warnings: [], deleted: [], kept: [], pending: null };
+  const ctx = { opts, repo: null, specPath: null, head: null, base: null, entry: null, retro: null, steps: [], warnings: [], deleted: [], kept: [], pending: null };
   const mode = opts.cleanupOnly ? 'cleanup-only' : opts.checkOnly ? 'check-only' : 'close';
   const extra = ghOverride() ? { gh_bin: 'override' } : {};
   try {
     ctx.repo = resolveRepo(opts.repo);
     if (!opts.cleanupOnly) resolveSpec(ctx);
-    const plan = opts.cleanupOnly ? [sweepBranches] : opts.checkOnly ? [checkPr, findWorktree] : [checkPr, checkRemote, findWorktree, recordRuns, exitWorktree, advanceStages, releaseScope, closeSpec, sweepBranches, pendingSharedState];
+    const plan = opts.cleanupOnly ? [sweepBranches] : opts.checkOnly ? [checkPr, findWorktree, decideRetro] : [checkPr, checkRemote, findWorktree, recordRuns, machineRetro, exitWorktree, advanceStages, releaseScope, closeSpec, sweepBranches, pendingSharedState];
     for (const step of plan) step(ctx);
+    if (!opts.cleanupOnly && !opts.checkOnly && !ctx.retro) decideRetro(ctx); // a close run with no worktree left reads the stored record
   } catch (e) {
     if (!(e instanceof CloseError)) throw e;
     return { ok: false, reason: e.reason, step: e.step, detail: e.detail, mode, ...extra, steps: ctx.steps, deleted: ctx.deleted, kept: ctx.kept, warnings: ctx.warnings };
   }
   const out = { ok: true, mode, ...extra, pr: opts.pr, spec: ctx.specPath, steps: ctx.steps, deleted: ctx.deleted, kept: ctx.kept, warnings: ctx.warnings };
+  if (ctx.retro) out.retro = ctx.retro;
   if (ctx.pending) out.reservations_commit_pending = ctx.pending;
   return out;
 }

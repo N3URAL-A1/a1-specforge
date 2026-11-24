@@ -280,3 +280,15 @@ part headers; the runner suite is `_test-fixtures/a1-suite-runner/`, parts under
 No dedicated mutation exists for U7 (overlapping selectors start a suite twice), F3 (failing suite
 dropped from the table) and V3 (A1_SUITE_REAL_VAULT exported after the sentinel replaced it). The
 part headers list a change, but STATUS records them as covered only indirectly.
+
+## Review logs and budget-aware fixture trees (spec 027 slice 5)
+
+- **`A1_KEEP_REVIEW_LOGS=1` in the a1-xprov harness.** `PLAN-REVIEW-LOG.md` is written only when this variable is `1`. The a1-xprov
+  harness exports it next to its `HOME` export, so the existing log asserts keep their meaning. Part 40 proves the default (variable
+  unset: no log file) and must keep unsetting it. A new fixture that reads the log needs the variable; one that checks "no opt-in file"
+  must unset it. The always-on `recovery` field of the observation line is not gated by it.
+- **Budget-aware trees.** Copying `skills/` copies `skills/reading-budget.json` with zero headroom. The budget check of `workflow lint`
+  and `workflow budget` therefore runs only on a root that holds a regular file `_shared/a1-tools.cjs` (D12a); a copy of `skills/` alone
+  is skipped, so a case that appends a line and expects exit 0 stays green. A case that wants the budget check plants an empty
+  `_shared/a1-tools.cjs` (see `rpOptIn` in `a1-workflow-lint/cases-read.sh`, case RP4). The permanent rule is `lines <= budget`; equality is
+  checked once per slice, in STATUS.md, not in a suite.

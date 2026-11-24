@@ -44,7 +44,7 @@ file reported MISMATCH for 74 of 85 real specs whose slug was present (measured
 
 Before the Isolation Gate and before any wave loads: the current PLAN.md must
 have been approved by the cross-provider review (a1-plan Phase 4b,
-`skills/a1-plan/workflows/04b-xprov-review.md`). The check is deterministic —
+`xprov --help routing`). The check is deterministic —
 the newest `plan-review-xprov` entry in `.a1/phases/<phase_name>/xreview/index.json`
 with `verdict: pass` must carry the sha256 of the PLAN.md on disk right now
 (FR-003). A plan edited after its review is an unreviewed plan.
@@ -69,7 +69,7 @@ place the check fails with that reason, which is the correct answer.)
   and record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
   in the retro (issue tag `xprov_not_applicable`). It is not a pass.
   **Spec 016 accepted verdicts.** Step 0c never asks the owner anything: the
-  consent question belongs to a1-plan `04b-xprov-review.md` Step 1.0. `accepted: "not_applicable"` is exit 0 for a denied
+  consent question belongs to a1-plan Phase 4b Step 1.0. `accepted: "not_applicable"` is exit 0 for a denied
   repository (`permit_state: denied`) and for a repository with no permit
   (`permit_state: absent`, `origin_changed` or `unbound_legacy`): **continue**,
   print `ℹ Plan review not applicable — no Codex permit for this repository; Reinhard-only, continuing.`
@@ -89,7 +89,7 @@ place the check fails with that reason, which is the correct answer.)
     first line `❌ … enforcement: blocking`; route the user to `a1-plan`
     Phase 4b (re-run the review on the current PLAN.md). The only other way
     forward is a waiver by the owner. Main path (chat): a1-plan
-    `04b-xprov-review.md` Step 5 with `--phase <phase_name>` — report what failed,
+    Phase 4b Step 5 (`xprov --help waiver`) with `--phase <phase_name>` — report what failed,
     `xprov consent question --kind waiver --phase <phase_name>`, AskUserQuestion
     exactly as printed, then `xprov consent ensure --kind waiver --phase <phase_name>` and `xprov consent waive --phase <phase_name>`. Fallback
     for headless runs (no chat to ask): tell the owner the terminal command and
