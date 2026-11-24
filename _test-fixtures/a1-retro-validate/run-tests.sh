@@ -872,7 +872,11 @@ WIRING="$(node -e '
   for (const f of files) {
     const t=fs.readFileSync(path.join(root,f),"utf8");
     const blocks=[...t.matchAll(/```bash\n([\s\S]*?)```/g)].map(m=>m[1]).filter(b=>/retro validate/.test(b));
-    const good=blocks.filter(b=>/gates fired --log "\$GATE_LOG"; RC=\$\?/.test(b) && /retro validate "\$RETRO_FILE" --gate-log "\$GATE_LOG" --phase retro-\S+; RC=\$\?/.test(b));
+    // retro-prose.md (a1-new-feature close-out, review round 2) validates against BOTH logs and names the defer flag; L15q runs it.
+    const prose=f.endsWith("retro-prose.md");
+    const good=blocks.filter(b=>prose
+      ? /gates fired --log "\$L"/.test(b) && /retro validate "\$RETRO_FILE" --gate-log "\$SPEC_LOG" --gate-log "\$PR_LOG" --phase retro-\S+ --defer-to-machine \S+; RC=\$\?/.test(b)
+      : /gates fired --log "\$GATE_LOG"; RC=\$\?/.test(b) && /retro validate "\$RETRO_FILE" --gate-log "\$GATE_LOG" --phase retro-\S+; RC=\$\?/.test(b));
     out.push(f.split("/").slice(-1)[0]+":"+blocks.length+"/"+good.length);
   }
   process.stdout.write(out.join(" "));' "$REPO_ROOT")"
@@ -934,9 +938,20 @@ gl_check "L13k the same two logs with the flags swapped: same result (the order 
 REF_REPO="$(gl_repo ref src/db.js "export const q = () => db.query('UPDATE users SET x=1');")" || exit 1
 gl_run "$REF_REPO" realpath-check run --phase pr-7 --diff-base HEAD~1 --project .
 REF_LOG="$REF_REPO/.a1/phases/pr-7/gate-log.jsonl"
+# Review round 2 (root cause B): the skip is an explicit caller decision, --defer-to-machine <spec>#<pr>, bound to the code_scope
+# reservation of <spec> and to both realpath'd logs under the repo root (.a1/phases/<spec>/ and .a1/phases/pr-<pr>/).
+for sp in fx-spec fx-nores fx-sym fix-bug1; do gl_run "$REF_REPO" realpath-check run --phase "$sp" --diff-base HEAD~1 --project .; done
+SPEC_LOG="$REF_REPO/.a1/phases/fx-spec/gate-log.jsonl"
+mkdir -p "$REF_REPO/.a1/phases/pr-9" && ln -s ../pr-7/gate-log.jsonl "$REF_REPO/.a1/phases/pr-9/gate-log.jsonl"   # a log that is a link to another log
+ln -s pr-7 "$REF_REPO/.a1/phases/pr-10"                                                                            # a phase dir that is a link
+node -e 'const r=n=>({type:"code_scope",paths:["src/"],by:n,at:"2026-11-24T00:00:00.000Z",stage:"implement"});
+  require("fs").writeFileSync(process.argv[1]+"/.a1/reservations.json",JSON.stringify({reservations:[r("fx-spec"),r("fx-sym")]}))' "$REF_REPO"
 rv() { # rv <retro> <phase> [--gate-log <log> ...]: run in REF_REPO under --phase <phase>; OUT RC ERR
   local f="$1" ph="$2"; shift 2
   OUT="$(cd "$REF_REPO" && node "$TOOLS" retro validate "$f" "$@" --enforced-since $SINCE --phase "$ph" 2>"$GL_WORK/err")"; RC=$?; ERR="$(cat "$GL_WORK/err")"
+}
+rvd() { # rvd <retro> <phase> [key]: both logs of fx-spec#7 and --defer-to-machine <key> (default fx-spec#7)
+  rv "$1" "$2" --gate-log "$SPEC_LOG" --gate-log "$REF_LOG" --defer-to-machine "${3:-fx-spec#7}"
 }
 retro_ref() { # retro_ref <out> <retro_of-line> [extra frontmatter lines...] -> a prose retro block without gates_fired
   local out="$1" ref="$2"; shift 2
@@ -947,7 +962,7 @@ retro_ref() { # retro_ref <out> <retro_of-line> [extra frontmatter lines...] -> 
 }
 rules() { gl_js 'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")'; }
 retro_ref "$GL_WORK/l14a.md" 'retro_of: fx-spec#7'
-rv "$GL_WORK/l14a.md" retro-fx-spec --gate-log "$REF_LOG"
+rvd "$GL_WORK/l14a.md" retro-fx-spec
 gl_check "L14a bound retro_of (phase retro-fx-spec, pr-7 log), no gates_fired, blocking fail in the log: exit 0, deferred" 0 \
   'j.gate_log.checked+"/"+j.gate_log.problems.length+"/"+JSON.stringify(j.gate_log.deferred)' 'true/0/{"retro_of":["fx-spec#7"],"failed_blocking":["gate-0.7-realpath"]}'
 [[ "$ERR" == WARN:*gate-0.7-realpath* && "$(printf '%s\n' "$ERR" | grep -c '^WARN:')" == "1" ]] && ok "L14a2 the deferred blocking fail is printed as one WARN line on stderr" || bad "L14a2 (err=$ERR)"
@@ -959,34 +974,34 @@ rv "$GL_WORK/l14b.md" retro-fx-spec --gate-log "$REF_LOG"
 gl_check "L14b control: neither key, same log: exit 1 missing_blocking_fail (today's behaviour)" 1 'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")' "missing_blocking_fail:gate-0.7-realpath"
 for bad in 'retro_of: fx-spec' 'retro_of: fx-spec#' 'retro_of: #7' 'retro_of: fx spec#7' 'retro_of: fx-spec#7x' 'retro_of:'; do
   retro_ref "$GL_WORK/l14c.md" "$bad"
-  rv "$GL_WORK/l14c.md" retro-fx-spec --gate-log "$REF_LOG"
+  rvd "$GL_WORK/l14c.md" retro-fx-spec
   [[ $RC -eq 1 && "$(gl_js 'j.gate_log.problems.map(p=>p.rule).sort().join(",")')" == "bad_retro_of,missing_blocking_fail" ]] && ok "L14c malformed key '$bad': exit 1 bad_retro_of + missing_blocking_fail, no skip" || bad "L14c '$bad' (rc=$RC out=$OUT)"
 done
 retro_ref "$GL_WORK/l14d.md" 'retro_of: fx-spec#7' 'gates_fired:' '  - {id: gate-0.7-realpath, verdict: pass, caught: false}'
-rv "$GL_WORK/l14d.md" retro-fx-spec --gate-log "$REF_LOG"
+rvd "$GL_WORK/l14d.md" retro-fx-spec
 gl_check "L14d retro_of AND gates_fired (old shape): still enforced, wrong verdict: exit 1 verdict_mismatch" 1 'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")' "verdict_mismatch:gate-0.7-realpath"
 retro_ref "$GL_WORK/l14e.md" 'retro_of: fx-spec#7' 'gates_fired:' '  - {id: gate-0.7-realpath, verdict: fail, caught: true}'
-rv "$GL_WORK/l14e.md" retro-fx-spec --gate-log "$REF_LOG"
+rvd "$GL_WORK/l14e.md" retro-fx-spec
 gl_check "L14e retro_of AND a correct gates_fired: exit 0, 0 problems, warning retro_of_with_gates_fired, nothing deferred" 0 \
   'j.gate_log.problems.length+"/"+JSON.stringify(j.gate_log.warnings)+"/"+("deferred" in j.gate_log)' '0/["retro_of_with_gates_fired"]/false'
 # L14f binding (c): the gates block is consistent with the log (a prompt-class gate, no verdict check) but leaves out the blocking fail.
 { cat "$GL_WORK/l14a.md"; printf '\n'; sed -n '1,8p' "$CORPUS/retro-clean.md" | sed 's/^date: .*/date: 2026-10-20/'; printf '  - {id: plan-audit, verdict: pass, caught: false}\n'; sed -n '12,$p' "$CORPUS/retro-clean.md" | sed -n '1,3p'; } > "$GL_WORK/l14f.md"
-rv "$GL_WORK/l14f.md" retro-fx-spec --gate-log "$REF_LOG"
+rvd "$GL_WORK/l14f.md" retro-fx-spec
 [[ $RC -eq 1 && "$(rules)" == "missing_blocking_fail:gate-0.7-realpath" && "$(gl_js '"deferred" in j.gate_log')" == "false" ]] && ok "L14f reference block + a consistent gates block that omits the blocking fail: exit 1 missing_blocking_fail only, nothing deferred (binding c)" || bad "L14f (rc=$RC out=$OUT)"
 retro_ref "$GL_WORK/l14g.md" 'retro_of: other-spec#7'
-rv "$GL_WORK/l14g.md" retro-fx-spec --gate-log "$REF_LOG"
+rvd "$GL_WORK/l14g.md" retro-fx-spec
 gl_check "L14g retro_of spec differs from --phase retro-<spec>: exit 1 bad_retro_of, missing_blocking_fail kept" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
 retro_ref "$GL_WORK/l14h.md" 'retro_of: fx-spec#8'
-rv "$GL_WORK/l14h.md" retro-fx-spec --gate-log "$REF_LOG"
+rvd "$GL_WORK/l14h.md" retro-fx-spec
 gl_check "L14h retro_of pr 8 but the log is pr-7: exit 1 bad_retro_of, missing_blocking_fail kept" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
-rv "$GL_WORK/l14a.md" r --gate-log "$REF_LOG"
+rvd "$GL_WORK/l14a.md" r
 gl_check "L14i --phase is not retro-<spec>: exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
 NOPR_LOG="$FAIL_LOG"
 retro_ref "$GL_WORK/l14j.md" 'retro_of: fx-spec#7'
-rv "$GL_WORK/l14j.md" retro-fx-spec --gate-log "$NOPR_LOG"
+rv "$GL_WORK/l14j.md" retro-fx-spec --gate-log "$SPEC_LOG" --gate-log "$NOPR_LOG" --defer-to-machine fx-spec#7
 gl_check "L14j the log path is .a1/phases/r/, not pr-7: exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
 retro_ref "$GL_WORK/l14k.md" 'retro_of: [fx-spec#7]'
-rv "$GL_WORK/l14k.md" retro-fx-spec --gate-log "$REF_LOG"
+rvd "$GL_WORK/l14k.md" retro-fx-spec
 gl_check "L14k a list value for retro_of: exit 1 bad_retro_of, no skip" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
 # L14l/m: kind: machine and machine_record are written only by feature close; a prose retro that carries them is refused (F-003).
 retro_ref "$GL_WORK/l14l.md" 'machine_record: fx-spec#7' 'kind: machine'
@@ -994,14 +1009,82 @@ rv "$GL_WORK/l14l.md" retro-fx-spec --gate-log "$REF_LOG"
 [[ $RC -eq 1 && "$OUT" == *forbidden_machine_keys* ]] && ok "L14l a block with kind: machine / machine_record: exit 1 forbidden_machine_keys" || bad "L14l (rc=$RC out=$OUT)"
 retro_ref "$GL_WORK/l14m0.md" 'retro_of: fx-spec#7'
 { cat "$GL_WORK/l14m0.md"; printf '\nPasted:\n\n---\ndate: 2026-11-24\nkind: machine\nmachine_record: fx-spec#7\nretro_of: fx-spec#7\nprose_required: false\n---\n\nend\n'; } > "$GL_WORK/l14m.md"
-rv "$GL_WORK/l14m.md" retro-fx-spec --gate-log "$REF_LOG"
+rvd "$GL_WORK/l14m.md" retro-fx-spec
 [[ $RC -eq 1 && "$OUT" == *forbidden_machine_keys* ]] && ok "L14m a pseudo head with retro_of pasted into the body after a blank line: exit 1 (no rc=0 with a forged key)" || bad "L14m (rc=$RC out=$OUT)"
-rv "$GL_WORK/l14m.md" retro-fx-spec
+OUT="$(cd "$REF_REPO" && node "$TOOLS" retro validate "$GL_WORK/l14m.md" --phase retro-fx-spec 2>/dev/null)"; RC=$?
 [[ $RC -eq 1 && "$OUT" == *forbidden_machine_keys* ]] && ok "L14m2 the same without --gate-log: exit 1" || bad "L14m2 (rc=$RC out=$OUT)"
-rv "$GL_WORK/l14a.md" retro-fx-spec --gate-log "$GL_WORK/tampered.jsonl"
+rv "$GL_WORK/l14a.md" retro-fx-spec --gate-log "$GL_WORK/tampered.jsonl" --defer-to-machine fx-spec#7
 [[ $RC -eq 2 && "$ERR" == *"not trustworthy"* ]] && ok "L14n retro_of with a chain-broken log: exit 2 (the skip does not bypass the log read)" || bad "L14n (rc=$RC err=$ERR)"
-rv "$GL_WORK/l14a.md" retro-fx-spec --gate-log "$GL_WORK/no-such.jsonl"
+rv "$GL_WORK/l14a.md" retro-fx-spec --gate-log "$GL_WORK/no-such.jsonl" --defer-to-machine fx-spec#7
 [[ $RC -eq 2 && "$ERR" == *"unreadable"* ]] && ok "L14o retro_of with a missing log: exit 2" || bad "L14o (rc=$RC err=$ERR)"
+
+# L15 review round 2 (repro files copied verbatim from the reviewers into corpus/retro-r2-*.md).
+# Measured red 2026-11-24 (git archive scratch copy, one edit each; list in the commit message): see the L15 labels.
+R2="$CORPUS/retro-r2"
+# L15d/e (root cause A): a machine block hidden behind `---x` (d) or behind U+2028 line breaks (e) is seen by the store reader but not
+# by the block parser. The raw-text ban sees every line, so both are refused with or without a log.
+for c in d e; do
+  rv "$R2-$c.md" retro-fx-spec --gate-log "$REF_LOG"
+  [[ $RC -eq 1 && "$OUT" == *forbidden_machine_keys* ]] && ok "L15$c retro-r2-$c.md: exit 1 forbidden_machine_keys (one view of the file)" || bad "L15$c (rc=$RC out=$OUT)"
+  OUT="$(node "$TOOLS" retro validate "$R2-$c.md" 2>/dev/null)"; RC=$?
+  [[ $RC -eq 1 && "$OUT" == *forbidden_machine_keys* ]] && ok "L15${c}2 the same without --gate-log: exit 1" || bad "L15${c}2 (rc=$RC out=$OUT)"
+done
+printf -- '---\r\ndate: 2026-11-24\r\nretro_of: fx-spec#7\r\n---\r\n\r\nx\r\n\r\n---\r\ndate: 2020-01-01\r\nkind: machine\r\ngates_fired: []\r\n---\r\n' > "$GL_WORK/l15crlf.md"
+rv "$GL_WORK/l15crlf.md" retro-fx-spec --gate-log "$REF_LOG"
+[[ $RC -eq 1 && "$OUT" == *forbidden_machine_keys* ]] && ok "L15f CRLF / lone-CR line ends are normalised before the ban: exit 1" || bad "L15f (rc=$RC out=$OUT)"
+printf -- '---\rdate: 2026-11-24\rretro_of: fx-spec#7\r---\r\rx\r\r---\rdate: 2020-01-01\rkind: machine\r---\r' > "$GL_WORK/l15cr.md"
+rv "$GL_WORK/l15cr.md" retro-fx-spec --gate-log "$REF_LOG"
+[[ $RC -eq 1 && "$OUT" == *forbidden_machine_keys* ]] && ok "L15f2 lone CR line ends: exit 1" || bad "L15f2 (rc=$RC out=$OUT)"
+# L15g (E): a broken log keeps exit 2 precedence over the forbidden-keys exit 1.
+rv "$R2-d.md" retro-fx-spec --gate-log "$GL_WORK/tampered.jsonl"
+[[ $RC -eq 2 && "$ERR" == *"not trustworthy"* ]] && ok "L15g forbidden keys + a chain-broken log: exit 2 (the log trust check comes first)" || bad "L15g (rc=$RC out=$OUT err=$ERR)"
+rv "$R2-d.md" retro-fx-spec --gate-log "$GL_WORK/no-such.jsonl"
+[[ $RC -eq 2 && "$ERR" == *"unreadable"* ]] && ok "L15g2 forbidden keys + a missing log: exit 2" || bad "L15g2 (rc=$RC err=$ERR)"
+# L15 (root cause B): the flag is the only way to a skip. f.md = a1-pr-review standalone (retro_of pr-7#7), g.md = a1-fix style
+# (fix-bug1#7, two scopes), h.md = the documented single-log command.
+retro_ref "$GL_WORK/l15none.md" 'retro_of: fx-spec#7'
+rv "$GL_WORK/l15none.md" retro-fx-spec --gate-log "$SPEC_LOG" --gate-log "$REF_LOG"
+gl_check "L15h retro_of without --defer-to-machine, bound-looking names and both logs: exit 1 bad_retro_of + missing_blocking_fail" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")+"/"+("deferred" in j.gate_log)' "bad_retro_of,missing_blocking_fail/false"
+rv "$R2-f.md" retro-pr-7 --gate-log "$REF_LOG"
+gl_check "L15i f.md (retro_of pr-7#7, standalone a1-pr-review) without the flag: exit 1 bad_retro_of + missing_blocking_fail" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+rv "$R2-f.md" retro-pr-7 --gate-log "$REF_LOG" --defer-to-machine pr-7#7
+gl_check "L15i2 f.md even WITH --defer-to-machine pr-7#7 (a pr-<n> spec is no feature): exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+rv "$R2-g.md" retro-fix-bug1 --gate-log "$REF_REPO/.a1/phases/fix-bug1/gate-log.jsonl" --gate-log "$REF_LOG"
+gl_check "L15j g.md (a1-fix style fix-bug1#7, two scopes, no flag): exit 1 bad_retro_of + missing_blocking_fail" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+rv "$R2-g.md" retro-fix-bug1 --gate-log "$REF_REPO/.a1/phases/fix-bug1/gate-log.jsonl" --gate-log "$REF_LOG" --defer-to-machine fix-bug1#7
+gl_check "L15j2 g.md WITH the flag but no code_scope reservation for fix-bug1: exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+rv "$R2-h.md" retro-fx-spec --gate-log "$REF_LOG" --defer-to-machine fx-spec#7
+gl_check "L15k h.md (single-log command, the flag given): exit 1 bad_retro_of (both logs are required)" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+rvd "$R2-h.md" retro-fx-spec
+gl_check "L15k2 h.md with both logs and the flag, reservation present: exit 0, deferred" 0 'j.gate_log.problems.length+"/"+JSON.stringify(j.gate_log.deferred.retro_of)' '0/["fx-spec#7"]'
+rvd "$R2-h.md" retro-fx-spec fx-spec#8
+gl_check "L15l flag fx-spec#8 does not equal the block's retro_of fx-spec#7: exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+retro_ref "$GL_WORK/l15nores.md" 'retro_of: fx-nores#7'
+rv "$GL_WORK/l15nores.md" retro-fx-nores --gate-log "$REF_REPO/.a1/phases/fx-nores/gate-log.jsonl" --gate-log "$REF_LOG" --defer-to-machine fx-nores#7
+gl_check "L15m flag without a code_scope reservation of the spec (logs and names fine): exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+retro_ref "$GL_WORK/l15sym.md" 'retro_of: fx-sym#9'
+rv "$GL_WORK/l15sym.md" retro-fx-sym --gate-log "$REF_REPO/.a1/phases/fx-sym/gate-log.jsonl" --gate-log "$REF_REPO/.a1/phases/pr-9/gate-log.jsonl" --defer-to-machine fx-sym#9
+gl_check "L15n the pr-9 log is a symlink to the pr-7 log: exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+retro_ref "$GL_WORK/l15sym10.md" 'retro_of: fx-sym#10'
+rv "$GL_WORK/l15sym10.md" retro-fx-sym --gate-log "$REF_REPO/.a1/phases/fx-sym/gate-log.jsonl" --gate-log "$REF_REPO/.a1/phases/pr-10/gate-log.jsonl" --defer-to-machine fx-sym#10
+gl_check "L15n2 the pr-10 phase dir is a symlink to pr-7: exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+cp -r "$REF_REPO/.a1" "$GL_WORK/elsewhere-a1"
+retro_ref "$GL_WORK/l15out.md" 'retro_of: fx-spec#7'
+rv "$GL_WORK/l15out.md" retro-fx-spec --gate-log "$GL_WORK/elsewhere-a1/phases/fx-spec/gate-log.jsonl" --gate-log "$GL_WORK/elsewhere-a1/phases/pr-7/gate-log.jsonl" --defer-to-machine fx-spec#7
+gl_check "L15o both logs are copies outside the repo root (right shape, wrong place): exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+for badflag in 'fx-spec' 'fx-spec#' '#7' 'fx-spec#07' 'a b#7'; do
+  rvd "$GL_WORK/l14a.md" retro-fx-spec "$badflag"
+  [[ $RC -eq 1 ]] && ok "L15p malformed flag '$badflag': exit 1" || bad "L15p '$badflag' (rc=$RC out=$OUT)"
+done
+# L15q (root cause C): the command of retro-prose.md, taken from the workflow file as written, is run against the fixture repo.
+PROSE_WF="$REPO_ROOT/skills/a1-new-feature/workflows/retro-prose.md"
+node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const bl=[...t.matchAll(/```bash\n([\s\S]*?)```/g)].map(m=>m[1]).filter(b=>/retro validate/.test(b));process.stdout.write(bl.length===1?bl[0]:"NBLOCKS="+bl.length)' "$PROSE_WF" > "$GL_WORK/prose-cmd.sh"
+if grep -q '^NBLOCKS=' "$GL_WORK/prose-cmd.sh"; then bad "L15q retro-prose.md has not exactly one bash block with retro validate ($(cat "$GL_WORK/prose-cmd.sh"))"; else
+  sed -e "s#<repo>#$REPO_ROOT#g" -e 's#<spec-id>#fx-spec#g' -e 's#<n>#7#g' "$GL_WORK/prose-cmd.sh" > "$GL_WORK/prose-cmd-run.sh"
+  PROSE_OUT="$(cd "$REF_REPO" && RETRO_FILE="$R2-h.md" bash "$GL_WORK/prose-cmd-run.sh" 2>&1)"; PRC=$?
+  [[ $PRC -eq 0 ]] && ok "L15q the retro validate block of retro-prose.md, run as written on h.md: exit 0" || bad "L15q (rc=$PRC out=$PROSE_OUT)"
+  grep -q -- '--defer-to-machine' "$GL_WORK/prose-cmd.sh" && [[ "$(grep -o -- '--gate-log' "$GL_WORK/prose-cmd.sh" | wc -l)" -ge 2 ]] && ok "L15q2 the documented command names the flag and two --gate-log" || bad "L15q2"
+fi
 
 printf '%s\n' "${results[@]}"
 echo "----"

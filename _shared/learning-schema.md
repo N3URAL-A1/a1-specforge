@@ -116,13 +116,15 @@ machine entry per merged PR to `pattern/a1-learnings/a1-new-feature.md`: `kind: 
 `prose_required: <true|false>` and the `gates_fired` derived from the gate logs. It is the only entry of a run that carries
 `gates_fired`. A prose retro written for the same run (only when `prose_required` is true) carries `retro_of: <spec>#<pr>`
 and no `gates_fired`; it is never `machine_record`, and only a head with `kind: machine` counts as a machine record.
-`retro validate --gate-log` accepts a block with `retro_of` and no `gates_fired` only when it is bound to the run:
-(a) `--phase` is `retro-<spec>` of the key, (b) one `--gate-log` is `.a1/phases/pr-<pr>/gate-log.jsonl` with the key's pr,
-(c) `retro_of` is one string and every enforced block of the file is such a reference. It then reports the deferred blocking
-fails (`gate_log.deferred`, a `WARN:` line). Any other `retro_of` is `bad_retro_of`. `retro validate` refuses a block that
-carries `kind: machine` or `machine_record` (only `feature close` writes them), and a machine head has no body, no `retro_of`
-and a `gates_fired` key. Residual risk: if `feature close` never runs, the run has no gate-ROI carrier at all. Older prose
-retros that carry `gates_fired` for such a run stay valid; consumers count runs, not entries.
+`retro validate --gate-log` accepts a block with `retro_of` and no `gates_fired` only when the caller passes
+`--defer-to-machine <spec>#<pr>` (only a1-new-feature's close-out prose retro does) and the claim holds on disk: the flag equals
+`retro_of`, `--phase` is `retro-<spec>`, a `code_scope` reservation of `<spec>` exists, and the two `--gate-log` paths resolve to
+`.a1/phases/<spec>/` and `.a1/phases/pr-<pr>/gate-log.jsonl` under the repo root (see `retro-template.md`). It then reports the
+deferred blocking fails (`gate_log.deferred`, a `WARN:` line). Any other `retro_of` is `bad_retro_of`. `retro validate` refuses a
+file with a line that starts with `kind: machine` or `machine_record:` (only `feature close` writes them), and a machine head has
+`kind: machine` right after `date:`, no body, no `retro_of` and a `gates_fired` key. Residual risk: a passed flag whose
+`feature close` never runs leaves the run without a gate-ROI carrier. Older prose retros that carry `gates_fired` for such a run
+stay valid; consumers count runs, not entries.
 
 **`evidence:` field (recommended — feeds FMEA-3 retro-integrity check).** A retro
 whose `Outcome`/`result:` claims a pass SHOULD carry an `evidence:` reference to a

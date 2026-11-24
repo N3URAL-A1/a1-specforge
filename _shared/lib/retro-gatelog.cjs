@@ -12,8 +12,10 @@
 //   bad_retro_of           a block's `retro_of` is not a string `<spec>#<pr>`, or is not bound to the run (see below)
 // A reference block (`retro_of` and no `gates_fired`, F-005) is a prose retro whose gates the machine entry of `feature close`
 // carries; it needs no entry for the log's blocking fails. That skip holds only when every enforced block of the file is such a
-// reference and each key is bound to the run: `--phase` is `retro-<spec>` of the key, and one --gate-log path is
-// `.a1/phases/pr-<n>/gate-log.jsonl` with n = the key's pr. The log is still read and chain-checked; the deferred fails are reported.
+// reference and each key is bound to the run by the explicit flag `--defer-to-machine <spec>#<pr>` (retro-bind.cjs): the flag equals
+// the key, `--phase` is `retro-<spec>`, <spec> holds a code_scope reservation, and the two --gate-log paths resolve (realpath, no
+// links) to `.a1/phases/<spec>/` and `.a1/phases/pr-<pr>/gate-log.jsonl` under the repo root. The log is still read and
+// chain-checked; the deferred fails are reported.
 // `prompt` and `human` entries are not checked against the log. A log verdict
 // `error` counts as `fail` (a gate that crashed did not pass).
 // ---------------------------------------------------------------------------
@@ -21,6 +23,7 @@
 const { parseRegistryRows } = require('./gate-ids.cjs');
 const { verifyChain } = require('./gate-log.cjs');
 const { ENFORCED_SINCE } = require('./enforced-since.cjs');
+const { bindingProblem } = require('./retro-bind.cjs');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const RETRO_OF_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*#[1-9][0-9]*$/;
@@ -93,24 +96,17 @@ function mergeByTs(records) {
   return records.map((r, i) => ({ r, i, t: time(r) })).sort((a, b) => (a.t !== null && b.t !== null && a.t !== b.t ? a.t - b.t : a.i - b.i)).map((x) => x.r);
 }
 
-const PR_LOG_RE = /(?:^|\/)\.a1\/phases\/pr-([1-9][0-9]*)\/gate-log\.jsonl$/;
-
 /**
  * @param {*} key a block's `retro_of` value
- * @param {string|null|undefined} scope the `--phase` of this call
- * @param {string[]} paths the resolved --gate-log paths
+ * @param {{scope?: string|null, defer: string|null, paths: string[], root: string}} ctx `--phase`, `--defer-to-machine`, the resolved --gate-log paths, the repo root
  * @returns {string|null} why the key is not bound to this run, else null
  */
-function retroOfProblem(key, scope, paths) {
+function retroOfProblem(key, ctx) {
   if (typeof key !== 'string' || !RETRO_OF_RE.test(key)) return 'retro_of must be one string <spec>#<pr>, e.g. 027-lean-pipeline#115';
-  const at = key.lastIndexOf('#');
-  const spec = key.slice(0, at);
-  const pr = key.slice(at + 1);
+  const spec = key.slice(0, key.lastIndexOf('#'));
+  const scope = ctx.scope;
   if (scope !== `retro-${spec}`) return `retro_of names spec ${spec}, but --phase is ${scope === null || scope === undefined ? '(none)' : scope}, not retro-${spec}`;
-  if (!paths.some((p) => { const m = PR_LOG_RE.exec(p.split('\\').join('/')); return m !== null && m[1] === pr; })) {
-    return `retro_of names PR ${pr}, but no --gate-log is .a1/phases/pr-${pr}/gate-log.jsonl`;
-  }
-  return null;
+  return bindingProblem(key, ctx);
 }
 
 /** @returns {boolean} the block is a prose reference (`retro_of`, no `gates_fired`): the machine entry carries its gates */
@@ -121,7 +117,7 @@ const isReference = (b) => b.retroOf !== undefined && !b.hasGates;
  * @returns {{checked: boolean, skipped?: string, lines?: number, problems: {id: string, rule: string, reason: string}[], deferred?: {retro_of: string[], failed_blocking: string[]}, warnings?: string[]}}
  * @throws Error code A1_GATELOG when the log is missing, malformed or its chain is broken
  */
-function checkRetroAgainstLog({ logPath, logPaths, registryText, blocks, since = ENFORCED_SINCE, scope = null }) {
+function checkRetroAgainstLog({ logPath, logPaths, registryText, blocks, since = ENFORCED_SINCE, scope = null, defer = null, root = process.cwd() }) {
   const enforced = blocks.filter((b) => b.isEntry && !isLegacy(b.date, since));
   if (enforced.length === 0) return { checked: false, skipped: 'legacy', problems: [] };
   // Spec 028 FR-016: several logs (a run that crossed scopes) are merged in argument order; any unreadable one throws.
@@ -138,12 +134,12 @@ function checkRetroAgainstLog({ logPath, logPaths, registryText, blocks, since =
   const keyed = enforced.filter((b) => b.retroOf !== undefined);
   const retroOfs = keyed.map((b) => (typeof b.retroOf === 'string' ? b.retroOf : JSON.stringify(b.retroOf)));
   keyed.forEach((b, i) => {
-    const why = retroOfProblem(b.retroOf, scope, paths);
+    const why = retroOfProblem(b.retroOf, { scope, defer, paths, root });
     if (why !== null) problems.push({ id: retroOfs[i], rule: 'bad_retro_of', reason: why });
   });
-  const defer = refs.length === enforced.length && !problems.some((p) => p.rule === 'bad_retro_of');
+  const skip = refs.length === enforced.length && !problems.some((p) => p.rule === 'bad_retro_of');
   const blockingFails = [...failed].filter((id) => rows.has(id) && rows.get(id).cells.enforcement === 'blocking');
-  if (!defer) {
+  if (!skip) {
     for (const id of blockingFails) {
       if (!named.has(id)) problems.push({ id, rule: 'missing_blocking_fail', reason: 'the log holds a fail line of this blocking gate, the retro does not name it' });
     }
@@ -151,7 +147,7 @@ function checkRetroAgainstLog({ logPath, logPaths, registryText, blocks, since =
   const warnings = enforced.some((b) => b.retroOf !== undefined && b.hasGates) ? ['retro_of_with_gates_fired'] : [];
   return {
     checked: true, lines, problems,
-    ...(defer ? { deferred: { retro_of: retroOfs, failed_blocking: blockingFails } } : {}),
+    ...(skip ? { deferred: { retro_of: retroOfs, failed_blocking: blockingFails } } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 }

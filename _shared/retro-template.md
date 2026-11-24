@@ -106,13 +106,19 @@ dated before `ENFORCED_SINCE` (`_shared/lib/enforced-since.cjs`) are legacy and
 skip this check.
 
 **Reference block (`retro_of`, no `gates_fired`).** A block with `retro_of: <spec>#<pr>` and no `gates_fired` does not have to
-name the log's blocking fails, but only when all of this holds, else `bad_retro_of` and `missing_blocking_fail` stay:
-(a) `--phase` is `retro-<spec>` of the key; (b) one `--gate-log` is `.a1/phases/pr-<pr>/gate-log.jsonl` with the key's pr;
-(c) `retro_of` is one string, and every enforced block of the file is such a reference (a gates block next to it stays
-enforced). The log is still read and chain-checked (exit 2 when broken). The skipped fails are reported as
-`gate_log.deferred` (`retro_of`, `failed_blocking`) and as one `WARN:` line on stderr. A block with both keys is validated as
-usual and reported as warning `retro_of_with_gates_fired`. A block carrying `kind: machine` or `machine_record` is exit 1
-(`forbidden_machine_keys`). Residual risk: if `feature close` never runs, the run has no gate-ROI carrier at all.
+name the log's blocking fails, but only when the caller passes `--defer-to-machine <spec>#<pr>` and all of this holds, else
+`bad_retro_of` and `missing_blocking_fail` stay: (a) the flag equals the block's `retro_of` and `<spec>` is not `pr-<n>`;
+(b) `--phase` is `retro-<spec>`; (c) `.a1/reservations.json` (this repo, or the primary checkout from a worktree) holds a
+`code_scope` entry of `<spec>`, which `feature close` releases only after this retro; (d) one `--gate-log` resolves (realpath, no
+links, under the repo root) to `.a1/phases/<spec>/gate-log.jsonl` and one to `.a1/phases/pr-<pr>/gate-log.jsonl`; (e) `retro_of` is
+one string, and every enforced block of the file is such a reference (a gates block next to it stays enforced). Who passes the
+flag: only the close-out prose retro of a1-new-feature (`retro-prose.md`, called from `05-merge` item 1); a1-fix, a1-execute,
+a1-plan, a1-evolve and a standalone a1-pr-review never do. The log is still read and chain-checked (exit 2 when broken, and that
+exit comes before the forbidden-keys exit 1). The skipped fails are reported as `gate_log.deferred` (`retro_of`,
+`failed_blocking`) and as one `WARN:` line on stderr. A block with both keys is validated as usual and reported as warning
+`retro_of_with_gates_fired`. A file with a line that starts with `kind: machine` or `machine_record:` (read after normalising
+\r, U+2028, U+2029, U+0085 to \n, anywhere in the file, not only in parsed blocks) is exit 1 (`forbidden_machine_keys`).
+Residual risk: the flag is the caller's word; if it is passed and `feature close` never runs, the run has no gate-ROI carrier at all.
 
 ## Write targets (in this order)
 

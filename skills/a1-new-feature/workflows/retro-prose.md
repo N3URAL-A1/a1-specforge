@@ -28,12 +28,17 @@ Before appending this retro, validate it against the logs — contract and exit 
 `_shared/retro-template.md`:
 
 ```bash
-GATE_LOG=".a1/phases/<spec-id>/gate-log.jsonl"
-node <repo>/_shared/a1-tools.cjs gates fired --log "$GATE_LOG"; RC=$?
-if [ $RC -ne 0 ]; then echo "gate log unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
-node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-<spec-id>; RC=$?
+SPEC_LOG=".a1/phases/<spec-id>/gate-log.jsonl"; PR_LOG=".a1/phases/pr-<n>/gate-log.jsonl"
+for L in "$SPEC_LOG" "$PR_LOG"; do
+  node <repo>/_shared/a1-tools.cjs gates fired --log "$L" >/dev/null; RC=$?
+  if [ $RC -ne 0 ]; then echo "gate log $L unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
+done
+node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$SPEC_LOG" --gate-log "$PR_LOG" --phase retro-<spec-id> --defer-to-machine <spec-id>#<n>; RC=$?
 if [ $RC -ne 0 ]; then echo "fix the problems above before the entry counts"; exit $RC; fi
 ```
+
+`--defer-to-machine` is the caller's word that `feature close` will write the machine entry: valid only with both logs under the repo root
+and a `code_scope` reservation of `<spec-id>` (still held; `feature close` releases it after this retro). Run from the worktree.
 
 ### Step 6b — Threshold check
 

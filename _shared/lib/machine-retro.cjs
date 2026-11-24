@@ -13,6 +13,7 @@ const { UNSCOPED, acquireLock, releaseLock, logPathFor } = require('./gate-log.c
 const { listGateLogs } = require('./worktree-gatelog.cjs');
 const { gatesFired, readGateLog, mergeByTs } = require('./retro-gatelog.cjs');
 const { assertVaultWriteContained } = require('./fs-safe.cjs');
+const { linesOf, blocksOf, isDelim } = require('./retro-view.cjs');
 
 const STORE_FILE = 'a1-new-feature.md';
 const LOCK_DIR = 'a1-new-feature.lock.d';
@@ -27,8 +28,6 @@ function refuse(message) {
   err.exit = 2;
   return err;
 }
-
-const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * @param {{records: Object[], issues?: string[]}} args gate-log records of every scope
@@ -124,34 +123,31 @@ function readStore(file) {
 }
 
 /**
- * The frontmatter heads of the store: the lines after a `---` line that is followed by `date:`, up to the next `---`. A head
- * starts only at the file start or after a blank line (every entry write puts one there), so a block quoted inside a prose body
- * (F-003) is not a head. `bare` is true when nothing but blank lines separates its closing `---` from EOF or the next `---`:
+ * The frontmatter heads of the store, read through retro-view (the view `retro validate` uses: newlines normalised, a block closes
+ * at the first line that starts with `---`). A head starts only at the file start or after a blank line (every entry write puts one
+ * there), has `date:` as its first line and is closed by a `---` line (or EOF), so a block quoted inside a prose body (F-003), or
+ * one cut by `---x`, is not a head. `bare` is true when the next non-blank line after the closing `---` is `---`, a `#` line or EOF:
  * a machine head has no body.
- * @returns {{text: string, bare: boolean}[]}
+ * @returns {{lines: string[], bare: boolean}[]}
  */
 function heads(text) {
-  const out = [];
-  const lines = text.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    if (!/^---\s*$/.test(lines[i]) || !/^date:/.test(lines[i + 1] || '')) continue;
-    if (i > 0 && lines[i - 1].trim() !== '') continue;
-    let j = i + 1;
-    while (j < lines.length && !/^---\s*$/.test(lines[j])) j++;
-    let k = j + 1;
-    while (k < lines.length && lines[k].trim() === '') k++;
-    out.push({ text: lines.slice(i + 1, j).join('\n'), bare: k >= lines.length || /^---\s*$/.test(lines[k]) });
-    i = j - 1;
-  }
-  return out;
+  const lines = linesOf(text);
+  const nextLine = (from) => { let k = from; while (k < lines.length && lines[k].trim() === '') k++; return k < lines.length ? lines[k] : null; };
+  return blocksOf(lines)
+    .filter((b) => /^date:/.test(b.lines[0] || '') && (b.open === 0 || lines[b.open - 1].trim() === '') && b.closedByDelim)
+    .map((b) => {
+      const next = b.close >= lines.length ? null : nextLine(b.close + 1);
+      return { lines: b.lines, bare: next === null || isDelim(next) || next.startsWith('#') };
+    });
 }
 
-const keyRe = (spec, pr) => new RegExp(`^machine_record: ${escapeRe(spec)}#${escapeRe(pr)}\\s*$`, 'm');
+const keyLine = (spec, pr) => `machine_record: ${spec}#${pr}`;
+const hasLine = (h, pred) => h.lines.some(pred);
 // Only a machine head counts (F-005, F-003): `kind: machine`, a `gates_fired` key, no `retro_of`, no body. A prose retro carries
-// `retro_of`; a stray or quoted `machine_record` line is no record.
-const MACHINE_KIND_RE = /^kind: machine\s*$/m;
-const isMachineHead = (h) => h.bare && MACHINE_KIND_RE.test(h.text) && /^gates_fired:/m.test(h.text) && !/^retro_of:/m.test(h.text);
-const headOf = (text, spec, pr) => heads(text).find((h) => isMachineHead(h) && keyRe(spec, pr).test(h.text));
+// `retro_of`; a stray or quoted `machine_record` line is no record. Matching is per normalised line, never a /m regex.
+// `kind: machine` is the line right after `date:`, the shape renderEntry writes: a key hidden among other header lines is no record.
+const isMachineHead = (h) => h.bare && /^kind: machine\s*$/.test(h.lines[1] || '') && hasLine(h, (l) => l.startsWith('gates_fired:')) && !hasLine(h, (l) => l.startsWith('retro_of:'));
+const headOf = (text, spec, pr) => heads(text).find((h) => isMachineHead(h) && hasLine(h, (l) => l.trimEnd() === keyLine(spec, pr)));
 
 /**
  * Idempotency check under the lock, then one O_APPEND write (no rewrite of the file: a concurrent plain append is not lost).
@@ -186,7 +182,7 @@ function findMachineRecord({ store, spec, pr }) {
   if (text === null) return { found: false, prose_required: true };
   const head = headOf(text, spec, pr);
   if (!head) return { found: false, prose_required: true };
-  return { found: true, prose_required: !/^prose_required: false\s*$/m.test(head.text) };
+  return { found: true, prose_required: !hasLine(head, (l) => /^prose_required: false\s*$/.test(l)) };
 }
 
 module.exports = { deriveRetro, proseDecision, renderEntry, readScopes, appendMachineRetro, findMachineRecord };

@@ -247,4 +247,32 @@ const entryOf = (spec, pr, gates) => M.renderEntry({ date: '2026-11-23', spec, p
   eq('MR18 and appending again is idempotent', M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'already_recorded');
 }
 
+// MR19 (review round 2, root cause A): the reviewers' forged-key files, verbatim (corpus/retro-r2-d.md: `---x` between the date and the
+// machine keys; retro-r2-e.md: U+2028 inside header values). The store reader must not take either for the machine record of the run,
+// so the real entry is still appended and prose_required stays true. Same files that `retro validate` refuses (L15d/L15e).
+const R2 = (c) => fs.readFileSync(path.join(LIB, '..', '..', '_test-fixtures', 'a1-retro-validate', 'corpus', `retro-r2-${c}.md`), 'utf8');
+for (const c of ['d', 'e']) {
+  const store = mkStore(`store19${c}`, '---\ndate: 2026-11-01\ntask: older\n---\n\nold body\n\n' + R2(c));
+  eq(`MR19${c} the forged key of retro-r2-${c}.md is not found`, M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
+  eq(`MR19${c} the real entry is appended, not already_recorded`, M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'appended');
+  eq(`MR19${c} and the real one is then found`, M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }).found, true);
+}
+// MR20 one view: a real machine entry written with CRLF (or lone CR / U+2028 / U+0085) line ends is still the record.
+for (const [label, nl] of [['CRLF', '\r\n'], ['CR', '\r'], ['LS', '\u2028'], ['NEL', '\u0085']]) {
+  const store = mkStore(`store20${label}`, entryOf('fx-spec', 7).split('\n').join(nl));
+  eq(`MR20 ${label} line ends: the machine record is found`, M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }).found, true);
+  eq(`MR20 ${label}: a second append is already_recorded`, M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'already_recorded');
+}
+// MR21 (D) bare: the next non-blank line after the closing --- is `---`, a `#` line or EOF; any other text makes it a prose entry.
+{
+  const head = entryOf('fx-spec', 7);
+  let k = 0;
+  const rec = (tail) => M.findMachineRecord({ store: mkStore(`store21-${k++}`, head + tail), spec: 'fx-spec', pr: 7 }).found;
+  eq('MR21 followed by a # heading: found', rec('\n# Section\n\ntext\n'), true);
+  eq('MR21 followed by a text line: not found', rec('\nsome prose line\n'), false);
+  eq('MR21 followed by the next entry: found', rec('\n---\ndate: 2026-11-30\n---\n\nprose\n'), true);
+  // the head's closing line is `---x`, not a delimiter: no machine head
+  eq('MR21 closing line ---x: not found', M.findMachineRecord({ store: mkStore('store21x', head.replace(/\n---\n$/, '\n---x\n')), spec: 'fx-spec', pr: 7 }).found, false);
+}
+
 done();
