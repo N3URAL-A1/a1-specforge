@@ -922,6 +922,47 @@ gl_check "L13j two logs holding the same gate (pass at t1, fail at t2), older lo
 gl_validate "$GL_WORK/l13j.md" "$FAIL_LOG" --gate-log "$PASS_LOG" --enforced-since $SINCE
 gl_check "L13k the same two logs with the flags swapped: same result (the order of the flags does not decide)" 0 'j.gate_log.problems.length+""' "0"
 
+# L14 spec 027 follow-up F-005: one gate-ROI carrier per run. A prose retro carries `retro_of: <spec>#<pr>` and no `gates_fired`;
+# the machine entry written by `feature close` (derived from the same logs) carries the gates. The skip is bound: a well-formed key,
+# a readable and chain-valid log, and every enforced block of the file being such a reference. FAIL_LOG holds a fail line of the
+# blocking gate gate-0.7-realpath. Measured red 2026-11-24 (one edit each in a scratch copy):
+#   retro-validate.cjs does not pass retroOf to the check (today's shape)              -> L14a
+#   retro-gatelog.cjs skips the blocking loop for any block with retro_of              -> L14c, L14d, L14e
+#   retro-gatelog.cjs never checks the retro_of shape                                  -> L14c
+retro_ref() { # retro_ref <out> <retro_of-line> [extra frontmatter lines...] -> a prose retro block without gates_fired
+  local out="$1" ref="$2"; shift 2
+  { printf -- '---\ndate: 2026-10-20\ntask: L14 fixture\nproject: a1-specforge\nresult: fail\nissues: [x]\nevidence: fixture\n'
+    [[ -n "$ref" ]] && printf '%s\n' "$ref"
+    for l in "$@"; do printf '%s\n' "$l"; done
+    printf 'one_line_learning: n/a\n---\n\nbody\n'; } > "$out"
+}
+retro_ref "$GL_WORK/l14a.md" 'retro_of: fx-spec#7'
+gl_validate "$GL_WORK/l14a.md" "$FAIL_LOG" --enforced-since $SINCE
+gl_check "L14a retro_of, no gates_fired, log with a blocking fail: exit 0, 0 problems, checked, deferred to fx-spec#7" 0 \
+  'j.gate_log.checked+"/"+j.gate_log.problems.length+"/"+JSON.stringify(j.gate_log.deferred)' 'true/0/{"retro_of":["fx-spec#7"],"failed_blocking":["gate-0.7-realpath"]}'
+retro_ref "$GL_WORK/l14b.md" ''
+gl_validate "$GL_WORK/l14b.md" "$FAIL_LOG" --enforced-since $SINCE
+gl_check "L14b control: neither key, same log: exit 1 missing_blocking_fail (today's behaviour)" 1 'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")' "missing_blocking_fail:gate-0.7-realpath"
+for bad in 'retro_of: fx-spec' 'retro_of: fx-spec#' 'retro_of: #7' 'retro_of: fx spec#7' 'retro_of: fx-spec#7x' 'retro_of:'; do
+  retro_ref "$GL_WORK/l14c.md" "$bad"
+  gl_validate "$GL_WORK/l14c.md" "$FAIL_LOG" --enforced-since $SINCE
+  [[ $RC -eq 1 && "$(gl_js 'j.gate_log.problems.map(p=>p.rule).join(",")')" == *bad_retro_of* ]] && ok "L14c malformed key '$bad': exit 1 bad_retro_of, no skip" || bad "L14c '$bad' (rc=$RC out=$OUT)"
+done
+retro_ref "$GL_WORK/l14d.md" 'retro_of: fx-spec#7' 'gates_fired:' '  - {id: gate-0.7-realpath, verdict: pass, caught: false}'
+gl_validate "$GL_WORK/l14d.md" "$FAIL_LOG" --enforced-since $SINCE
+gl_check "L14d retro_of AND gates_fired (old shape): still enforced, wrong verdict: exit 1 verdict_mismatch" 1 'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")' "verdict_mismatch:gate-0.7-realpath"
+retro_ref "$GL_WORK/l14e.md" 'retro_of: fx-spec#7' 'gates_fired:' '  - {id: gate-0.7-realpath, verdict: fail, caught: true}'
+gl_validate "$GL_WORK/l14e.md" "$FAIL_LOG" --enforced-since $SINCE
+gl_check "L14e retro_of AND a correct gates_fired: exit 0, 0 problems, warning retro_of_with_gates_fired, nothing deferred" 0 \
+  'j.gate_log.problems.length+"/"+JSON.stringify(j.gate_log.warnings)+"/"+("deferred" in j.gate_log)' '0/["retro_of_with_gates_fired"]/false'
+{ cat "$GL_WORK/l14a.md"; printf '\n'; sed -n '1,8p' "$CORPUS/retro-clean.md" | sed 's/^date: .*/date: 2026-10-20/'; printf '  - {id: gate-0.7-realpath, verdict: pass, caught: false}\n'; sed -n '12,$p' "$CORPUS/retro-clean.md"; } > "$GL_WORK/l14f.md"
+gl_validate "$GL_WORK/l14f.md" "$FAIL_LOG" --enforced-since $SINCE
+[[ $RC -eq 1 ]] && ok "L14f a reference block next to a gates block that mismatches the log: the gates block is still enforced (exit 1)" || bad "L14f (rc=$RC out=$OUT)"
+gl_validate "$GL_WORK/l14a.md" "$GL_WORK/tampered.jsonl" --enforced-since $SINCE
+[[ $RC -eq 2 && "$ERR" == *"not trustworthy"* ]] && ok "L14g retro_of with a chain-broken log: exit 2 (the skip does not bypass the log read)" || bad "L14g (rc=$RC err=$ERR)"
+gl_validate "$GL_WORK/l14a.md" "$GL_WORK/no-such.jsonl" --enforced-since $SINCE
+[[ $RC -eq 2 && "$ERR" == *"unreadable"* ]] && ok "L14h retro_of with a missing log: exit 2" || bad "L14h (rc=$RC err=$ERR)"
+
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-retro-validate: $pass passed, $fail failed"

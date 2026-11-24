@@ -123,12 +123,17 @@ function readStore(file) {
   try { return fs.readFileSync(h.fd, 'utf8'); } finally { fs.closeSync(h.fd); }
 }
 
-/** The frontmatter heads of the store: the lines after a `---` line that is followed by `date:`, up to the next `---`. */
+/**
+ * The frontmatter heads of the store: the lines after a `---` line that is followed by `date:`, up to the next `---`. A head
+ * starts only at the file start or after a blank line (every entry write puts one there), so a block quoted inside a prose body
+ * (F-003) is not a head.
+ */
 function heads(text) {
   const out = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
     if (!/^---\s*$/.test(lines[i]) || !/^date:/.test(lines[i + 1] || '')) continue;
+    if (i > 0 && lines[i - 1].trim() !== '') continue;
     let j = i + 1;
     while (j < lines.length && !/^---\s*$/.test(lines[j])) j++;
     out.push(lines.slice(i + 1, j).join('\n'));
@@ -138,7 +143,9 @@ function heads(text) {
 }
 
 const keyRe = (spec, pr) => new RegExp(`^machine_record: ${escapeRe(spec)}#${escapeRe(pr)}\\s*$`, 'm');
-const headOf = (text, spec, pr) => heads(text).find((h) => keyRe(spec, pr).test(h));
+// Only a machine head counts (F-005): a prose retro carries `retro_of`, and a stray `machine_record` line in a prose head is no record.
+const MACHINE_KIND_RE = /^kind: machine\s*$/m;
+const headOf = (text, spec, pr) => heads(text).find((h) => MACHINE_KIND_RE.test(h) && keyRe(spec, pr).test(h));
 
 /**
  * Idempotency check under the lock, then one O_APPEND write (no rewrite of the file: a concurrent plain append is not lost).

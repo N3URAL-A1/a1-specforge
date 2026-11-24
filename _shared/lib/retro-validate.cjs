@@ -292,7 +292,7 @@ function cmdRetroValidate(argv) {
       process.exit(2);
     }
     const got = parseGatesFired(fm);
-    blockInfos.push({ date: fm.date, isEntry: got.present || fm.date !== undefined, entries: got.entries });
+    blockInfos.push({ date: fm.date, isEntry: got.present || fm.date !== undefined, entries: got.entries, retroOf: fm.retro_of, hasGates: got.present });
     if (!got.present) continue;
     present = true;
     if (got.malformed) malformed = true;

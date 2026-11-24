@@ -9,6 +9,10 @@
 //   verdict_mismatch       its verdict differs from the LAST log line of that id
 //   missing_blocking_fail  the log holds a `fail` line of a `blocking` gate
 //                          that no entry of the retro names
+//   bad_retro_of           a block's `retro_of` is not `<spec>#<pr>`
+// A reference block (`retro_of` and no `gates_fired`, F-005) is a prose retro whose gates the machine entry of `feature close`
+// carries; it needs no entry for the log's blocking fails. That skip holds only when every enforced block of the file is such a
+// reference and the key is well-formed; the log is still read and chain-checked, and the deferred fails are reported.
 // `prompt` and `human` entries are not checked against the log. A log verdict
 // `error` counts as `fail` (a gate that crashed did not pass).
 // ---------------------------------------------------------------------------
@@ -18,6 +22,7 @@ const { verifyChain } = require('./gate-log.cjs');
 const { ENFORCED_SINCE } = require('./enforced-since.cjs');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const RETRO_OF_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*#[1-9][0-9]*$/;
 
 /** `error` -> `fail`; the retro vocabulary is pass|fail|not_applicable */
 function retroVerdict(logVerdict) {
@@ -87,9 +92,12 @@ function mergeByTs(records) {
   return records.map((r, i) => ({ r, i, t: time(r) })).sort((a, b) => (a.t !== null && b.t !== null && a.t !== b.t ? a.t - b.t : a.i - b.i)).map((x) => x.r);
 }
 
+/** @returns {boolean} the block is a prose reference (`retro_of`, no `gates_fired`): the machine entry carries its gates */
+const isReference = (b) => b.retroOf !== undefined && !b.hasGates;
+
 /**
- * @param {{logPath?: string, logPaths?: string[], registryText: string, blocks: {date: any, isEntry: boolean, entries: {id: string, verdict?: string}[]}[], since?: string}} args
- * @returns {{checked: boolean, skipped?: string, lines?: number, problems: {id: string, rule: string, reason: string}[]}}
+ * @param {{logPath?: string, logPaths?: string[], registryText: string, blocks: {date: any, isEntry: boolean, entries: {id: string, verdict?: string}[], retroOf?: any, hasGates?: boolean}[], since?: string}} args
+ * @returns {{checked: boolean, skipped?: string, lines?: number, problems: {id: string, rule: string, reason: string}[], deferred?: {retro_of: string[], failed_blocking: string[]}, warnings?: string[]}}
  * @throws Error code A1_GATELOG when the log is missing, malformed or its chain is broken
  */
 function checkRetroAgainstLog({ logPath, logPaths, registryText, blocks, since = ENFORCED_SINCE }) {
@@ -104,13 +112,24 @@ function checkRetroAgainstLog({ logPath, logPaths, registryText, blocks, since =
   const { last, failed } = lastVerdicts(records);
   const named = new Set(entries.map((e) => e.id));
   const problems = entryProblems(entries, rows, last);
-  for (const id of failed) {
-    const row = rows.get(id);
-    if (row && row.cells.enforcement === 'blocking' && !named.has(id)) {
-      problems.push({ id, rule: 'missing_blocking_fail', reason: 'the log holds a fail line of this blocking gate, the retro does not name it' });
+  const refs = enforced.filter(isReference);
+  const retroOfs = enforced.filter((b) => b.retroOf !== undefined).map((b) => String(b.retroOf));
+  for (const key of retroOfs) {
+    if (!RETRO_OF_RE.test(key)) problems.push({ id: key, rule: 'bad_retro_of', reason: 'retro_of must be <spec>#<pr>, e.g. 027-lean-pipeline#115' });
+  }
+  const defer = refs.length === enforced.length && !problems.some((p) => p.rule === 'bad_retro_of');
+  const blockingFails = [...failed].filter((id) => rows.has(id) && rows.get(id).cells.enforcement === 'blocking');
+  if (!defer) {
+    for (const id of blockingFails) {
+      if (!named.has(id)) problems.push({ id, rule: 'missing_blocking_fail', reason: 'the log holds a fail line of this blocking gate, the retro does not name it' });
     }
   }
-  return { checked: true, lines, problems };
+  const warnings = enforced.some((b) => b.retroOf !== undefined && b.hasGates) ? ['retro_of_with_gates_fired'] : [];
+  return {
+    checked: true, lines, problems,
+    ...(defer ? { deferred: { retro_of: retroOfs, failed_blocking: blockingFails } } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
 }
 
 /** The `gates_fired` YAML block the retro template tells the writer to paste. */

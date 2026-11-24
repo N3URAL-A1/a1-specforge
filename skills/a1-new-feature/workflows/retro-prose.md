@@ -13,41 +13,26 @@ bugs_found_in_verify: <N>
 bug_classes: [<from: missing_wiring, wrong_behavior_vs_spec, deployment_incomplete, schema_flaw, regression, spec_omission, gate_friction, agent_self_report_false, parallel_collision>]
 gate_that_caught_most: <Gate 0|Gate 1|Gate 2|Gate 3|Phase 6|none>
 phase_that_produced_most_bugs: <discover|specify|clarify|plan|implement|verify>
-gates_fired:
-  - {id: <slug>, verdict: <pass|fail>, caught: <true|false>}
+retro_of: <spec-id>#<pr>
 ```
 
-**`gates_fired` is required** (not the free-text `gate_that_caught_most` alone —
-that one stays for continuity but a1-evolve cannot score it). List every gate
-this run actually passed through, using ids verbatim from
-`_shared/gates-registry.md`. For a standard feature run that is typically:
-
-```yaml
-gates_fired:
-  - {id: gate-c-ac-dryrun,        verdict: pass, caught: false}
-  - {id: gate-4.5-fr-consistency, verdict: pass, caught: false}
-  - {id: check-reservations,      verdict: pass, caught: false}
-  - {id: phase-6-verify,          verdict: pass, caught: true}
-```
-
-`caught: true` marks the gate that surfaced a real problem — at most a few per
-run, often none. This is what lets a1-evolve tell a gate that earns its cost
-from one that has never caught anything in 10+ runs.
+**No `gates_fired` here.** `feature close` writes the machine entry that carries it (one gate-ROI carrier per run); a second
+list would count the run twice in a1-evolve. `retro_of` is the same `<spec>#<pr>` the close uses (never `machine_record`).
+`gate_that_caught_most` stays as free text.
 
 Use the `bug_classes` tags consistently — they feed `patterns.md` clustering.
 A run with zero bugs is still useful data — write the entry with
 `bugs_found_in_verify: 0` and `one_line_learning: no failures`.
 
-Before appending this retro, validate the `gates_fired` block — full
-contract and exit codes in `_shared/retro-template.md`, which is the owner
-of this instruction:
+Before appending this retro, validate it against the logs — contract and exit codes in
+`_shared/retro-template.md`:
 
 ```bash
 GATE_LOG=".a1/phases/<spec-id>/gate-log.jsonl"
 node <repo>/_shared/a1-tools.cjs gates fired --log "$GATE_LOG"; RC=$?
 if [ $RC -ne 0 ]; then echo "gate log unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
 node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-<spec-id>; RC=$?
-if [ $RC -ne 0 ]; then echo "fix the gates_fired block above before the entry counts"; exit $RC; fi
+if [ $RC -ne 0 ]; then echo "fix the problems above before the entry counts"; exit $RC; fi
 ```
 
 ### Step 6b — Threshold check
@@ -57,7 +42,9 @@ have no cache):
 
 ```bash
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-ENTRY_COUNT=$(grep -c "^date:" "$VAULT/pattern/a1-learnings/a1-new-feature.md" 2>/dev/null || echo 0)
+STORE="$VAULT/pattern/a1-learnings/a1-new-feature.md"
+ALL=$(grep -c "^date:" "$STORE" 2>/dev/null); MACHINE=$(grep -c "^kind: machine" "$STORE" 2>/dev/null)
+ENTRY_COUNT=$(( ${ALL:-0} - ${MACHINE:-0} ))  # a machine entry is no prose retro
 ```
 If `$ENTRY_COUNT` is a multiple of 5:
 > "5 new a1-new-feature learnings accumulated in the learning store. Run `a1-evolve`?"

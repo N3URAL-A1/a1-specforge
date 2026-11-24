@@ -151,9 +151,9 @@ const entryOf = (spec, pr, gates) => M.renderEntry({ date: '2026-11-23', spec, p
 }
 // MR12b separators: no trailing newline -> blank line added; already a blank line -> none; missing file -> entry only.
 {
-  const s1 = mkStore('store12b1', 'x'); M.appendMachineRetro({ store: s1, spec: 'a', pr: 1, entry: '---\ndate: d\nmachine_record: a#1\n---\n' });
-  const s2 = mkStore('store12b2', 'x\n\n'); M.appendMachineRetro({ store: s2, spec: 'a', pr: 1, entry: '---\ndate: d\nmachine_record: a#1\n---\n' });
-  const s3 = mkStore('store12b3', null); M.appendMachineRetro({ store: s3, spec: 'a', pr: 1, entry: '---\ndate: d\nmachine_record: a#1\n---\n' });
+  const s1 = mkStore('store12b1', 'x'); M.appendMachineRetro({ store: s1, spec: 'a', pr: 1, entry: '---\ndate: d\nkind: machine\nmachine_record: a#1\n---\n' });
+  const s2 = mkStore('store12b2', 'x\n\n'); M.appendMachineRetro({ store: s2, spec: 'a', pr: 1, entry: '---\ndate: d\nkind: machine\nmachine_record: a#1\n---\n' });
+  const s3 = mkStore('store12b3', null); M.appendMachineRetro({ store: s3, spec: 'a', pr: 1, entry: '---\ndate: d\nkind: machine\nmachine_record: a#1\n---\n' });
   const rd = (s) => fs.readFileSync(path.join(s, STORE_FILE), 'utf8');
   eq('MR12b separators', [rd(s1).startsWith('x\n\n---'), rd(s2).startsWith('x\n\n---'), rd(s3).startsWith('---')], [true, true, true]);
 }
@@ -197,6 +197,27 @@ const entryOf = (spec, pr, gates) => M.renderEntry({ date: '2026-11-23', spec, p
   eq('MR16 a body line is not a record', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
   eq('MR16 the append still happens', M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'appended');
   eq('MR16 now the real head is found', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: true, prose_required: false });
+}
+
+// MR17 (F-003) a pseudo head quoted inside a prose body (---, date:, kind: machine, machine_record:, prose_required: false) is no entry:
+// it neither suppresses the append nor reports prose_required: false. The store is a real shape: a prose entry whose body quotes it.
+{
+  const quoted = '---\ndate: 2026-11-02\nkind: machine\nmachine_record: fx-spec#7\nprose_required: false\n---\n';
+  const prose = '---\ndate: 2026-11-01\nresult: pass\n---\n\nThe reviewer pasted this block:\n' + quoted + 'end of the paste.\n';
+  const store = mkStore('store17', prose);
+  eq('MR17 a quoted pseudo head is not found, prose required', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
+  eq('MR17 the append still happens', M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'appended');
+  eq('MR17 now the real head is found', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }).found, true);
+  const atStart = mkStore('store17b', quoted); // a head at the file start is real
+  eq('MR17b a machine head at the file start is found', M.findMachineRecord({ store: atStart, spec: 'fx-spec', pr: 7 }), { found: true, prose_required: false });
+}
+// MR18 (F-005) a prose entry that carries retro_of (or a stray machine_record without kind: machine) is not the machine record.
+{
+  const prose = '---\ndate: 2026-11-01\nresult: fail\nretro_of: fx-spec#7\n---\n\nbody\n\n---\ndate: 2026-11-01\nmachine_record: fx-spec#7\n---\n\nbody\n';
+  const store = mkStore('store18', prose);
+  eq('MR18 retro_of and a kind-less machine_record are not found', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
+  eq('MR18 the machine entry is appended after the prose retro', M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'appended');
+  eq('MR18 and appending again is idempotent', M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'already_recorded');
 }
 
 done();

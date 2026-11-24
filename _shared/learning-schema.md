@@ -111,6 +111,15 @@ gates_fired:
 The legacy `gate_that_caught_most` free-text field is still supported for older
 retros; new retros should prefer `gates_fired`. a1-evolve reads both.
 
+**`kind: machine`, `machine_record`, `retro_of` (one gate-ROI carrier per run, F-005).** `feature close` appends one
+machine entry per merged PR to `pattern/a1-learnings/a1-new-feature.md`: `kind: machine`, `machine_record: <spec>#<pr>`,
+`prose_required: <true|false>` and the `gates_fired` derived from the gate logs. It is the only entry of a run that carries
+`gates_fired`. A prose retro written for the same run (only when `prose_required` is true) carries `retro_of: <spec>#<pr>`
+and no `gates_fired`; it is never `machine_record`, and only a head with `kind: machine` counts as a machine record.
+`retro validate --gate-log` accepts a block with `retro_of` and no `gates_fired` when the key is well-formed and the log is
+readable, and reports the deferred blocking fails. Older prose retros that carry `gates_fired` for such a run stay valid;
+consumers count runs (group by `machine_record` / `retro_of`), not entries.
+
 **`evidence:` field (recommended — feeds FMEA-3 retro-integrity check).** A retro
 whose `Outcome`/`result:` claims a pass SHOULD carry an `evidence:` reference to a
 verifiable artifact: a VERIFICATION.md path (with its verdict), and/or commit
