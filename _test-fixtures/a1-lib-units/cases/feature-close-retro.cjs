@@ -135,8 +135,10 @@ const { appendGateLine } = require(path.join(LIB, 'gate-log.cjs'));
   const store = read(STORE(t)) || '';
   eq('FR1 exactly one machine_record line', (store.match(/^machine_record: fx-spec#7$/gm) || []).length, 1);
   check('FR1 close output carries retro, prose_required false', r.json && r.json.retro && r.json.retro.prose_required === false, r.out);
-  const v = tools(t.A, t.env, ['retro', 'validate', STORE(t), ...logs.flatMap((l) => ['--gate-log', l]), '--phase', 'retro-fr']);
-  check('FR1 retro validate exit 0 on the stored entry', v.status === 0, `rc=${v.status} out=${v.stdout} err=${v.stderr}`);
+  const stripped = path.join(path.dirname(STORE(t)), 'fr1-stripped.md'); // machine-only keys are forbidden in retro validate (review round 1)
+  fs.writeFileSync(stripped, store.replace(/^(kind|machine_record): .*\n/gm, ''));
+  const v = tools(t.A, t.env, ['retro', 'validate', stripped, ...logs.flatMap((l) => ['--gate-log', l]), '--phase', 'retro-fr']);
+  check('FR1 retro validate exit 0 on the stored entry without the machine-only keys', v.status === 0, `rc=${v.status} out=${v.stdout} err=${v.stderr}`);
   // FR2 a second close adds no entry.
   const r2 = close(t, ARGS);
   eq('FR2 second close writes no new entry', [r2.rc, ((read(STORE(t)) || '').match(/^machine_record:/gm) || []).length], [0, 1]);

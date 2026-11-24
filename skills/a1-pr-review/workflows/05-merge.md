@@ -135,7 +135,7 @@ rm -f "$RD"
 ```
 
    Exit ≠ 0 is STOP. When `prose_required` is true, write the caller's prose retro now, from inside the worktree, per a1-new-feature `workflows/retro-prose.md`, validated against
-   both logs (`--gate-log <caller phase log> --gate-log .a1/phases/pr-<n>/gate-log.jsonl`; the flag repeats, the same file twice counts once). When it is false, write none.
+   both logs and `--defer-to-machine <caller_spec_id>#<n>` (the command of retro-prose.md; only this call passes the flag). When it is false, write none.
    a1-fix caller: its retro is already written in `workflows/04-verify.md` Step 2b before the handoff; only check that its entry is present, do not append it again.
 2. Run record (the worktree exit deletes the gate logs):
 

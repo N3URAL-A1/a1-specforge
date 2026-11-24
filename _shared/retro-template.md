@@ -31,6 +31,11 @@ from `_shared/gates-registry.md`; `caught: true` only if that gate is what
 surfaced a real problem this run. Skills with no gates (read-only reporters)
 omit the field.
 
+**Exception: the a1-new-feature close-out prose retro** (`retro-prose.md`, written only when `feature close` says
+`prose_required`) carries `retro_of: <spec>#<pr>` and **no** `gates_fired`. The `kind: machine` entry that
+`feature close` appends from the same gate logs is the one gate-ROI carrier of that run; a second list would count it twice.
+Only `feature close` writes `kind: machine` / `machine_record`; `retro validate` refuses a file with a line starting with `kind: machine` or `machine_record:` (any raw line, in any block or body).
+
 Why this is not optional: a1-evolve's gate-ROI step computes which gates earn
 their cost and which are dead weight, and it needs ≥5 retros carrying the
 field. The 2026-08-02 requirement worked — the corpus went from exactly one
@@ -55,7 +60,7 @@ GATE_LOG=".a1/phases/<scope>/gate-log.jsonl"
 node <repo>/_shared/a1-tools.cjs gates fired --log "$GATE_LOG"; RC=$?
 if [ $RC -ne 0 ]; then echo "gate log unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
 node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-<scope>; RC=$?
-if [ $RC -ne 0 ]; then echo "fix the gates_fired block above before the entry counts"; exit $RC; fi
+if [ $RC -ne 0 ]; then echo "fix the problems above before the entry counts"; exit $RC; fi
 ```
 
 A run that crossed two scopes (a caller phase plus its `pr-<n>` review) repeats the flag:
@@ -99,6 +104,21 @@ than the last log line, or when the log holds a `fail` of a `blocking` gate that
 the retro leaves out. `prompt` and `human` entries stay self-reported. Retros
 dated before `ENFORCED_SINCE` (`_shared/lib/enforced-since.cjs`) are legacy and
 skip this check.
+
+**Reference block (`retro_of`, no `gates_fired`).** A block with `retro_of: <spec>#<pr>` and no `gates_fired` does not have to
+name the log's blocking fails, but only when the caller passes `--defer-to-machine <spec>#<pr>` and all of this holds, else
+`bad_retro_of` and `missing_blocking_fail` stay: (a) the flag equals the block's `retro_of` and `<spec>` is not `pr-<n>`;
+(b) `--phase` is `retro-<spec>`; (c) `.a1/reservations.json` (this repo, or the primary checkout from a worktree) holds a
+`code_scope` entry of `<spec>`, which `feature close` releases only after this retro; (d) one `--gate-log` resolves (realpath, no
+links, under the repo root) to `.a1/phases/<spec>/gate-log.jsonl` and one to `.a1/phases/pr-<pr>/gate-log.jsonl`; (e) `retro_of` is
+one string, and every enforced block of the file is such a reference (a gates block next to it stays enforced). Who passes the
+flag: only the close-out prose retro of a1-new-feature (`retro-prose.md`, called from `05-merge` item 1); a1-fix, a1-execute,
+a1-plan, a1-evolve and a standalone a1-pr-review never do. The log is still read and chain-checked (exit 2 when broken, and that
+exit comes before the forbidden-keys exit 1). The skipped fails are reported as `gate_log.deferred` (`retro_of`,
+`failed_blocking`) and as one `WARN:` line on stderr. A block with both keys is validated as usual and reported as warning
+`retro_of_with_gates_fired`. A file with a line that starts with `kind: machine` or `machine_record:` (read after normalising
+\r, U+2028, U+2029, U+0085 to \n, anywhere in the file, not only in parsed blocks) is exit 1 (`forbidden_machine_keys`).
+Residual risk: the flag is the caller's word; if it is passed and `feature close` never runs, the run has no gate-ROI carrier at all.
 
 ## Write targets (in this order)
 

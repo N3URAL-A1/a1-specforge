@@ -4,9 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const { parseFrontmatter, fail, parseFlags, repoRoot } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
+const { currentScope } = require('./gate-log.cjs');
 const { parseRegistryIds, expandRangeIds, resolveGateId } = require('./gate-ids.cjs');
 const { checkRetroAgainstLog } = require('./retro-gatelog.cjs');
 const { ENFORCED_SINCE } = require('./enforced-since.cjs');
+const { normalizeNewlines, linesOf, blocksOf, machineKeyLines } = require('./retro-view.cjs');
 
 // ---------------------------------------------------------------------------
 // retro validate — Wave 2 of spec 007-retro-gate-id-validator.
@@ -134,23 +136,16 @@ function registryPath() {
 // is exactly `---`, up to the next such line". Content outside blocks (the
 // file's prose) is ignored, exactly as before.
 function frontmatterBlocks(text) {
-  // Split on standalone `---` lines and treat each SEGMENT as a candidate
-  // block, rather than pairing opening/closing delimiters. Pairing was the
-  // first attempt and was wrong: an appended entry's closing `---` is also
-  // the next entry's opening one, so from the second entry onward the pairs
-  // shift by one and every other entry is skipped. Measured on the V10
-  // fixture: 2 blocks found where 3 ids live, 1 id reported.
-  //
-  // Segments are cheap to over-produce — a segment with no `gates_fired:`
-  // costs one `parseGatesFired` call that returns `present: false` and is
-  // skipped by the caller. Over-producing is therefore safe; under-producing
-  // silently drops retro entries, which is the defect being fixed.
-  const segments = text.split(/^---[ \t]*$/m);
+  // One view of the file (retro-view.cjs, review round 2): the same newline normaliser and block rule `machine-retro` reads the
+  // store with. A block opens at an exact `---` line and every delimiter opens one (an appended entry's closing `---` is also the
+  // next entry's opening one; pairing opening/closing lines shifts by one from the second entry on, measured on fixture V10).
+  // Over-producing blocks is safe (a block without `gates_fired:` is skipped); under-producing drops retro entries.
   const blocks = [];
-  for (const seg of segments) {
-    if (seg.trim() === '') continue;
-    // parseFrontmatter expects the delimiters, so re-wrap each segment.
-    blocks.push('---\n' + seg.replace(/^\n+|\n+$/g, '') + '\n---\n');
+  for (const b of blocksOf(linesOf(text))) {
+    const body = b.lines.join('\n').replace(/^\n+|\n+$/g, '');
+    if (body.trim() === '') continue;
+    // parseFrontmatter expects the delimiters, so re-wrap each block.
+    blocks.push('---\n' + body + '\n---\n');
   }
   return blocks;
 }
@@ -211,7 +206,7 @@ function resolveRetroPath(flags) {
   if (leftovers.length > 0) {
     process.stderr.write(
       `usage error: unrecognised argument(s): ${leftovers.join(' ')}\n` +
-        '  usage: retro validate <retro-path> [--registry <path>] [--gate-log <path>] [--enforced-since YYYY-MM-DD]\n'
+        '  usage: retro validate <retro-path> [--registry <path>] [--gate-log <path>] [--enforced-since YYYY-MM-DD] [--defer-to-machine <spec>#<pr>]\n'
     );
     process.exit(1);
   }
@@ -265,14 +260,14 @@ function loadRegistryText(flags) {
  * @param {string[]} argv
  */
 function cmdRetroValidate(argv) {
-  const flags = parseFlags(argv, { registry: 'value', 'gate-log': 'value', 'enforced-since': 'value' });
+  const flags = parseFlags(argv, { registry: 'value', 'gate-log': 'value', 'enforced-since': 'value', 'defer-to-machine': 'value' });
   // Spec 028 FR-016: parseFlags keeps only the last value, so every --gate-log is collected from argv itself.
   const gateLogs = collectGateLogs(argv);
   const retroPath = resolveRetroPath(flags);
   const registryText = loadRegistryText(flags);
   const expanded = expandRangeIds(parseRegistryIds(registryText));
 
-  const retroText = fs.readFileSync(retroPath, 'utf8');
+  const retroText = normalizeNewlines(fs.readFileSync(retroPath, 'utf8'));
   const blocks = frontmatterBlocks(retroText);
   // No `---` delimiters at all: fall back to treating the whole text as one
   // block so a bare single-entry file (the shape every pre-2026-09-13
@@ -292,11 +287,23 @@ function cmdRetroValidate(argv) {
       process.exit(2);
     }
     const got = parseGatesFired(fm);
-    blockInfos.push({ date: fm.date, isEntry: got.present || fm.date !== undefined, entries: got.entries });
+    blockInfos.push({ date: fm.date, isEntry: got.present || fm.date !== undefined, entries: got.entries, retroOf: fm.retro_of, hasGates: got.present });
     if (!got.present) continue;
     present = true;
     if (got.malformed) malformed = true;
     rawEntries.push(...got.entries);
+  }
+
+  // E: the gate-log trust check runs first, so a broken or missing log keeps exit 2 over the forbidden-keys exit 1.
+  const gateLog = runGateLogCheck(flags, registryText, blockInfos, gateLogs);
+
+  // A raw-text ban on the normalised file, not on parsed blocks: a machine key hidden behind `---x`, a U+2028 or a lone CR is
+  // invisible to a block parser and visible to the store reader (root cause A). `kind: machine` / `machine_record` are written only
+  // by `feature close` (machine-retro.cjs); a prose retro that carries them would forge the idempotency key of a run (F-003).
+  const forbidden = machineKeyLines(retroText);
+  if (forbidden.length > 0) {
+    return emitExit(1, JSON.stringify({ file: retroPath, entries: [], valid: 0, drift: 0, unknown: 0, forbidden_machine_keys: forbidden }) + '\n',
+      'fix: a retro must not carry `kind: machine` or `machine_record` (only `feature close` writes them); a prose retro uses `retro_of: <spec>#<pr>`.\n');
   }
 
   if (present && malformed) {
@@ -310,14 +317,12 @@ function cmdRetroValidate(argv) {
     process.exit(2);
   }
 
-  const gateLog = runGateLogCheck(flags, registryText, blockInfos, gateLogs);
-
   if (!present) {
     // Missing field is legitimate for read-only reporter skills
     // (retro-template.md). Nothing to validate; still print the JSON shape
     // so callers can rely on a stable contract regardless of exit path.
     const out = { file: retroPath, entries: [], valid: 0, drift: 0, unknown: 0, ...(gateLog ? { gate_log: gateLog } : {}) };
-    return emitExit(gateLog && gateLog.problems.length > 0 ? 1 : 0, JSON.stringify(out) + '\n', '');
+    return emitExit(gateLog && gateLog.problems.length > 0 ? 1 : 0, JSON.stringify(out) + '\n', deferredWarn(gateLog) + problemLines(gateLog));
   }
 
   const results = rawEntries.map((entry, idx) => {
@@ -349,11 +354,11 @@ function collectGateLogs(argv) {
  * @param {object} flags @param {string} registryText @param {object[]} blockInfos
  */
 function runGateLogCheck(flags, registryText, blockInfos, gateLogs) {
-  if (!('gate-log' in flags) && !('enforced-since' in flags)) return null; // present-without-value is a usage error below
+  if (!('gate-log' in flags) && !('enforced-since' in flags) && !('defer-to-machine' in flags)) return null; // present-without-value is a usage error below
   const since = flags['enforced-since'] === undefined ? ENFORCED_SINCE : flags['enforced-since'];
   const plain = (p) => typeof p === 'string' && p !== '' && p.length <= MAX_PATH_LEN && !/[\x00-\x1f\x7f]/.test(p);
   if (gateLogs.length === 0 || !gateLogs.every(plain)) {
-    process.stderr.write('error: --enforced-since needs --gate-log <path>; --gate-log needs a plain path\n');
+    process.stderr.write('error: --enforced-since and --defer-to-machine need --gate-log <path>; --gate-log needs a plain path\n');
     process.exit(2);
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(since))) {
@@ -362,7 +367,7 @@ function runGateLogCheck(flags, registryText, blockInfos, gateLogs) {
   }
   try {
     const logPaths = [...new Set(gateLogs.map((p) => path.resolve(process.cwd(), p)))];
-    return checkRetroAgainstLog({ logPaths, registryText, blocks: blockInfos, since });
+    return checkRetroAgainstLog({ logPaths, registryText, blocks: blockInfos, since, scope: currentScope(), defer: flags['defer-to-machine'] === undefined ? null : String(flags['defer-to-machine']), root: repoRoot() });
   } catch (e) {
     if (e.code !== 'A1_GATELOG') throw e;
     process.stderr.write(`error: ${e.message}\n`);
@@ -370,6 +375,15 @@ function runGateLogCheck(flags, registryText, blockInfos, gateLogs) {
   }
   return null;
 }
+
+/** @returns {string} one WARN line naming every blocking fail left to the machine entry, else '' */
+function deferredWarn(gateLog) {
+  const d = gateLog && gateLog.deferred;
+  if (!d || d.failed_blocking.length === 0) return '';
+  return `WARN: blocking fail(s) ${d.failed_blocking.join(', ')} are not named here: retro_of ${d.retro_of.join(', ')} leaves them to the kind: machine entry of \`feature close\`; without that close there is no carrier.\n`;
+}
+
+const problemLines = (gateLog) => (gateLog ? gateLog.problems.map((p) => `fix: gate log ${p.rule}: ${p.id} - ${p.reason}.\n`).join('') : '');
 
 /**
  * Emit the JSON report on stdout, the fix instructions on stderr, and own the
@@ -395,7 +409,7 @@ function reportAndExit(retroPath, results, gateLog) {
   const text = JSON.stringify({ file: retroPath, entries: results.map(toEntry), valid, drift, unknown, ...(gateLog ? { gate_log: gateLog } : {}) }) + '\n';
 
   const logProblems = gateLog ? gateLog.problems : [];
-  let err = logProblems.map((p) => `fix: gate log ${p.rule}: ${p.id} - ${p.reason}.\n`).join('');
+  let err = deferredWarn(gateLog) + problemLines(gateLog);
   if (drift === 0 && unknown === 0 && logProblems.length === 0) {
     return emitExit(0, text, err);
   }

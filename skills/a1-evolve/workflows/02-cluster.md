@@ -70,8 +70,11 @@ Only patterns with impact score ≥ 6 proceed to Phase 3.
 
 ## 2e. Gate-ROI (gate retirement candidates)
 
-When **≥5 retros carry a `gates_fired` field** (see `_shared/learning-schema.md`),
-compute per-gate return-on-investment.
+When **≥5 runs carry a `gates_fired` field** (see `_shared/learning-schema.md`),
+compute per-gate return-on-investment. **Count runs, not entries:** (1) a `kind: machine` entry is one run, key `machine_record: <spec>#<pr>`;
+(2) a prose entry with `retro_of` belongs to that run and never counts for gates; (3) a legacy prose entry with `gates_fired` and no `retro_of`
+is dropped when a machine entry has the same spec and the PR number of its `evidence`/`task` equals the `machine_record` pr (ignore the date);
+(4) otherwise it is its own run. Counting across skills (a1-execute retros) is out of scope here.
 
 **If fewer than 5 carry it, say so out loud in the Phase 3 report** — do not
 skip silently. Report the actual count and which gated skills wrote retros
@@ -85,7 +88,7 @@ is not reaching the skills, or the gate-ROI machinery should be retired
 (constitution invariant 8 applies to a1-evolve's own steps too). IDs come from `_shared/gates-registry.md` —
 ids not in the registry are ignored.
 
-For each registered gate, across all `gates_fired` entries:
+For each registered gate, across the deduplicated runs' `gates_fired`:
 - Entries with `verdict: not_applicable` are not firings: report them as a separate `skipped` count and leave
   them out of the fired count and the retirement rule. A gate that is skipped in every run is its own finding
   (invariant 8: a gate that cannot fail is documentation), not a retirement candidate.

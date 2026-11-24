@@ -587,7 +587,7 @@ ${SPEC_INIT_HELP}
                   Exit: 0 ok, 2 watermark file found but 'updated:' field
                   missing/malformed, 3 watermark source missing or unreadable.
 
-  a1-tools retro validate <retro-path> [--registry <path>] [--gate-log <path>]... [--enforced-since YYYY-MM-DD]
+  a1-tools retro validate <retro-path> [--registry <path>] [--gate-log <path>]... [--enforced-since YYYY-MM-DD] [--defer-to-machine <spec>#<pr>]
                   Spec 007-retro-gate-id-validator, Wave 2. Parses every
                   gates_fired[].id in <retro-path> and checks it against
                   _shared/gates-registry.md's id table (gate-ids.cjs, Wave 1):
@@ -616,6 +616,14 @@ ${SPEC_INIT_HELP}
                   --gate-log for a run that crossed two scopes (spec 028):
                   the logs are read together, the same file twice counts once,
                   a missing or broken log is exit 2.
+                  --defer-to-machine <spec>#<pr>: only a1-new-feature's close-out
+                  prose retro passes it. A block with retro_of (no gates_fired)
+                  skips the blocking-fail check only when the flag equals its
+                  retro_of, <spec> holds a code_scope reservation (.a1/reservations.json
+                  of the repo or its primary checkout) and the two --gate-log paths are
+                  .a1/phases/<spec>/ and .a1/phases/pr-<pr>/gate-log.jsonl under the repo
+                  root (realpath, no links). Else bad_retro_of. A raw line of the
+                  file starting with kind: machine or machine_record: is exit 1.
                   --registry overrides the repo-resolved
                   _shared/gates-registry.md — test-only escape hatch (SC-002),
                   production call sites never pass it.
