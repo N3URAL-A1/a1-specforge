@@ -346,7 +346,10 @@
     "reason": "Fixed in this diff: 2e now counts runs (grouped by machine_record/retro_of), not entries; prompt text, no executable guard.",
     "date": "2026-11-24",
     "by": "orchestrator",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Reinhard PR 119 5.1: machine entries are written only to a1-new-feature.md (machine-retro.cjs:18, sole caller feature-close.cjs:184); the other stores have one writer per run",
+    "reviewed_at": "2026-11-24T21:20:39.214Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -354,7 +357,10 @@
     "reason": "Not this defect class: this skill writes exactly one retro per run and has no machine-entry carrier, so its gates_fired requirement cannot double count. Cross-skill counting in a1-evolve is out of scope (separate follow-up).",
     "date": "2026-11-24",
     "by": "orchestrator",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Reinhard PR 119 5.1: machine entries are written only to a1-new-feature.md (machine-retro.cjs:18, sole caller feature-close.cjs:184); the other stores have one writer per run",
+    "reviewed_at": "2026-11-24T21:20:39.272Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -362,7 +368,10 @@
     "reason": "Not this defect class: entry count of this skill's own store, which has a single retro writer per run (no machine entries), so entries equal runs.",
     "date": "2026-11-24",
     "by": "orchestrator",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Reinhard PR 119 5.1: machine entries are written only to a1-new-feature.md (machine-retro.cjs:18, sole caller feature-close.cjs:184); the other stores have one writer per run",
+    "reviewed_at": "2026-11-24T21:20:39.300Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -370,7 +379,10 @@
     "reason": "Not this defect class: entry count of this skill's own store, which has a single retro writer per run (no machine entries), so entries equal runs.",
     "date": "2026-11-24",
     "by": "orchestrator",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Reinhard PR 119 5.1: machine entries are written only to a1-new-feature.md (machine-retro.cjs:18, sole caller feature-close.cjs:184); the other stores have one writer per run",
+    "reviewed_at": "2026-11-24T21:20:39.330Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -378,7 +390,10 @@
     "reason": "Fixed in this diff: the 6b threshold count subtracts kind: machine entries, so a run counts once.",
     "date": "2026-11-24",
     "by": "orchestrator",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Reinhard PR 119 5.1: machine entries are written only to a1-new-feature.md (machine-retro.cjs:18, sole caller feature-close.cjs:184); the other stores have one writer per run",
+    "reviewed_at": "2026-11-24T21:20:39.245Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -386,6 +401,9 @@
     "reason": "Not this defect class: this skill writes exactly one retro per run and has no machine-entry carrier, so its gates_fired requirement cannot double count. Cross-skill counting in a1-evolve is out of scope (separate follow-up).",
     "date": "2026-11-24",
     "by": "orchestrator",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Reinhard PR 119 5.1: machine entries are written only to a1-new-feature.md (machine-retro.cjs:18, sole caller feature-close.cjs:184); the other stores have one writer per run",
+    "reviewed_at": "2026-11-24T21:20:39.362Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   }
 ]
