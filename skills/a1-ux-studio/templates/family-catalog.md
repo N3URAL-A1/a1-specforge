@@ -1,6 +1,6 @@
 # a1-ux-studio family catalog
 
-Built-in list of the 8 style families (spec 024, FR-025, US-024-10). The
+Built-in list of the 11 style families (spec 024, FR-025, US-024-10). The
 studio orchestrates existing style skills and design systems; it does not
 duplicate them. `run.cjs families` returns these families when the project
 has no design system and the taste vault is missing or empty.
@@ -14,12 +14,15 @@ both files in step: ids, skills and contexts here must equal the JSON.
 |----|------|------------|--------------|----------|
 | `print-tech-paper` | Print tech paper | Warm paper tones, fine rules, technical-manual typography | `minimalist-ui`, `wada-farben` | brand, product |
 | `dither-mono` | Dither mono | Monochrome, dithered textures, raw grid | `industrial-brutalist-ui` | brand, product |
-| `vast-quiet-cinematic` | Vast quiet cinematic | Wide space, slow pacing, large imagery | `design-taste-frontend`, `frontend-design` | brand, product |
+| `vast-quiet-cinematic` | Vast quiet cinematic | Wide space, slow pacing, large imagery | `design-taste-frontend`, `frontend-design` | brand, product, trade |
 | `technical-systems` | Technical systems | Dense, legible, tool-like interfaces | `industrial-brutalist-ui`, `ui-ux-pro-max` | product |
 | `product-led-minimalism` | Product-led minimalism | The product is the hero, chrome stays quiet | `minimalist-ui`, `ui-ux-pro-max` | product |
-| `luminous-futurism` | Luminous futurism | Glow, gradients, forward-looking surfaces | `design-taste-frontend`, `frontend-design` | brand |
+| `luminous-futurism` | Luminous futurism | Glow, gradients, forward-looking surfaces | `design-taste-frontend`, `frontend-design` | brand, trade |
 | `monumental-editorial` | Monumental editorial | Oversized type, magazine rhythm | `design-taste-frontend`, `frontend-design` | brand |
 | `classical-remix` | Classical remix | Serif heritage with a modern twist | `frontend-design`, `wada-farben` | brand, product |
+| `warm-craft-workshop` | Warm craft workshop | Lime and linen tones, terracotta accent, rounded friendly sans, big call button | `frontend-design`, `wada-farben` | trade |
+| `colour-consult-craft` | Colour consult craft | Light and calm, a fan of muted wall colours as the signature, colour advice up front | `frontend-design`, `wada-farben` | trade |
+| `regional-trust-craft` | Regional trust craft | Grounded and local, clear facts, family business and master craftsman to the fore | `minimalist-ui`, `wada-farben` | trade |
 
 ## Design systems
 
@@ -44,6 +47,18 @@ both files in step: ids, skills and contexts here must equal the JSON.
   its `contexts` lists `product` (`vast-quiet-cinematic`). Product
   candidates therefore: `print-tech-paper`, `dither-mono`,
   `technical-systems`, `product-led-minimalism`, `classical-remix`.
+- `trade` context (craft or trade business): `run.cjs families --context trade`
+  offers only families that list `trade`: `vast-quiet-cinematic`,
+  `luminous-futurism`, `warm-craft-workshop`, `colour-consult-craft`,
+  `regional-trust-craft`. Editorial and technical families
+  (`monumental-editorial`, `print-tech-paper`, `dither-mono`) never appear
+  for a trade business. A family listed for `trade` only is never offered
+  for `brand` or `product`. `luminous-futurism` stays in the trade pool only
+  in a restrained form (soft light gradients, a floating contact card, no
+  glow or sci-fi surfaces); a user accepted exactly that for a painter.
+  Render rules for every trade tile: see `workflows/02-diverge.md`.
+  Evidence: a real craft-business run, 2026-11 (the brand pool was rejected
+  as magazine and technical-manual look; the craft set was accepted).
 - Design system (FR-016): every candidate loads only that design system;
   its tokens and fonts win over the family and over a conflicting
   Guardrail, and the script warns about the conflict. The family then

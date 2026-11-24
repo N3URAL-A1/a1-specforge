@@ -29,8 +29,8 @@ confirms or corrects it.
 
 1. **Source URL** — "Welche Seite soll in den Taste-Vault?" A public
    `https://` page only: no login page, no page that shows personal data.
-2. **Family** — propose the closest of the 8 catalog ids with one line of
-   reason; the user confirms or names another id. Only those 8 ids are valid.
+2. **Family** — propose the closest of the 11 catalog ids with one line of
+   reason; the user confirms or names another id. Only those 11 ids are valid.
 3. **Keywords** — draft 4–8 vocabulary words that name the look (materials,
    type, rhythm, colour), comma-separated, e.g. "warm paper, hairline rules,
    mono numerals". At most 12, each up to 40 characters of letters, digits,
@@ -110,7 +110,7 @@ Never write or edit the entry file by hand.
 
 ```bash
 node <skill-dir>/scripts/taste/taste.cjs lint --root "$A1_VAULT_ROOT/pattern/taste-vault"
-node <skill-dir>/scripts/run/run.cjs families --vault-root "$A1_VAULT_ROOT" --context <brand|product>
+node <skill-dir>/scripts/run/run.cjs families --vault-root "$A1_VAULT_ROOT" --context <brand|product|trade>
 ```
 
 `lint` exits 0 (`taste lint: ok (<n> entries, <m> families)`); exit 1 lists

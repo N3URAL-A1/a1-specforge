@@ -29,9 +29,10 @@ What the screen must achieve for its user, in one or two sentences.
 Required: an empty Intent stops the run before any board is rendered.
 
 - Text: "<who does what on this screen, and what counts as success>"
-- Context: brand | product
+- Context: brand | product | trade
   - brand: marketing, landing, storytelling; the look leads.
   - product: app screen, dashboard, form; the task leads.
+  - trade: craft or trade business (painter, carpenter); trust and the call lead.
 - Viewport: desktop-first | mobile parity
   - desktop-first: designed at 1280 px, 390 px must stay usable.
   - mobile parity: 390 px is designed with the same care as 1280 px.

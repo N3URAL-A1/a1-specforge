@@ -7,7 +7,7 @@ Every value is one line; the four text fields and the screenshot path are JSON s
 keywords a JSON array of strings.
 Placeholders, written below as double-brace tokens around these names:
   id            entry slug, ^[a-z0-9][a-z0-9-]{0,63}$; equals the file name and is unique in its family folder
-  family        one of the 8 family ids in scripts/run/families.json; equals the folder name
+  family        one of the 11 family ids in scripts/run/families.json; equals the folder name
   source_url    public http(s) URL the reference was taken from, no credentials
   keywords      1-12 vocabulary words that name the look, e.g. ["warm paper", "hairline rules", "mono numerals"]
   image_prompt  one prompt that would generate an image in this look (English, max 1000 chars)
