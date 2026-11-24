@@ -53,10 +53,12 @@ both files in step: ids, skills and contexts here must equal the JSON.
   `regional-trust-craft`. Editorial and technical families
   (`monumental-editorial`, `print-tech-paper`, `dither-mono`) never appear
   for a trade business. A family listed for `trade` only is never offered
-  for `brand` or `product`. Every trade variant keeps the phone in the first
-  screen and a sticky call bar on mobile. Evidence: maler-brungs run
-  2026-11-23 (catalog board rejected as magazine/technical; the craft set
-  was accepted).
+  for `brand` or `product`. `luminous-futurism` stays in the trade pool only
+  in a restrained form (soft light gradients, a floating contact card, no
+  glow or sci-fi surfaces); a user accepted exactly that for a painter.
+  Render rules for every trade tile: see `workflows/02-diverge.md`.
+  Evidence: a real craft-business run, 2026-11 (the brand pool was rejected
+  as magazine and technical-manual look; the craft set was accepted).
 - Design system (FR-016): every candidate loads only that design system;
   its tokens and fonts win over the family and over a conflicting
   Guardrail, and the script warns about the conflict. The family then

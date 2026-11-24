@@ -42,7 +42,9 @@ list and skill mapping: [../templates/family-catalog.md](../templates/family-cat
    | `builtin` | No design system and no or an empty vault: the catalog families for the context (8 for `brand`, 5 for `product` and `trade`). |
 
    For `product`, the script drops every family that lists
-   `design-taste-frontend`; no candidate loads it.
+   `design-taste-frontend`; no candidate loads it. For `trade`, the script
+   offers only families that list `trade`: no editorial or technical
+   family appears.
 4. Tell the user every warning in German, one line each (e.g. a Guardrail
    that conflicts with the design system: the design system wins).
 5. Source `design-system`: load the design-system skill now with the Skill
@@ -53,6 +55,11 @@ list and skill mapping: [../templates/family-catalog.md](../templates/family-cat
 
 The 5 candidates, in output order, become the 5 tiles. Each candidate's
 `descriptor` is the tile's direction.
+
+`Context: trade`: every tile shows the phone number in the first screen and,
+at 390 px, a sticky call bar at the bottom. Use real service, process and
+about content of the business; keep a friendly sans and room photos.
+`luminous-futurism` stays restrained there: soft gradients, no glow.
 
 ## Taste-vault pool
 
