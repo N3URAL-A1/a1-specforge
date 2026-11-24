@@ -339,5 +339,53 @@
     "review_reason": "configChange(base 787390d, HEAD 53f8cc7) recomputed: fields [affected, ci_evidence, smoke, timeout_ms], fingerprint 70bfc0b5b9cf7aad matches HEAD content. each/argv_prefix/commands/flaky_base canon-equal to base. affected/smoke are read only by verify-affected(-map).cjs via verify run --affected; verify check refuses scope affected (scope_not_full); merge-check never reads them. ci_evidence: workflow unchanged, checks 4->9 superset (all nine are jobs in test.yml; judge() requires every listed check, so this only tightens), unchanged list identical. timeout_ms 427500 = ceil(285 s x 1500) from suite-groups timings (check-timeout.cjs rc 0); per-command, commands run serially; a timeout is reason timeout, never pre_existing_red, retried once, not excusable by config (no env_red/requires in verify.json) and cannot make a red suite green. Headroom on a1-intent is 1.48x (289 s baseline) - a loaded host can yield a false red, rerun with --timeout-ms; acceptable.",
     "reviewed_at": "2026-11-18T00:34:19.573Z",
     "reviewed_by": "a1-reinhard-reviewer"
+  },
+  {
+    "kind": "class_sweep",
+    "fingerprint": "class-sweep:skills/a1-evolve/workflows/02-cluster.md:e03835073b49bc7f",
+    "reason": "Fixed in this diff: 2e now counts runs (grouped by machine_record/retro_of), not entries; prompt text, no executable guard.",
+    "date": "2026-11-24",
+    "by": "orchestrator",
+    "review": "pending"
+  },
+  {
+    "kind": "class_sweep",
+    "fingerprint": "class-sweep:skills/a1-execute/workflows/03-verify.md:cd21bdc02e880c6d",
+    "reason": "Not this defect class: this skill writes exactly one retro per run and has no machine-entry carrier, so its gates_fired requirement cannot double count. Cross-skill counting in a1-evolve is out of scope (separate follow-up).",
+    "date": "2026-11-24",
+    "by": "orchestrator",
+    "review": "pending"
+  },
+  {
+    "kind": "class_sweep",
+    "fingerprint": "class-sweep:skills/a1-execute/workflows/03-verify.md:dfd7cf04412320d3",
+    "reason": "Not this defect class: entry count of this skill's own store, which has a single retro writer per run (no machine entries), so entries equal runs.",
+    "date": "2026-11-24",
+    "by": "orchestrator",
+    "review": "pending"
+  },
+  {
+    "kind": "class_sweep",
+    "fingerprint": "class-sweep:skills/a1-modernize/workflows/07-publish.md:154cf750d2c47fdf",
+    "reason": "Not this defect class: entry count of this skill's own store, which has a single retro writer per run (no machine entries), so entries equal runs.",
+    "date": "2026-11-24",
+    "by": "orchestrator",
+    "review": "pending"
+  },
+  {
+    "kind": "class_sweep",
+    "fingerprint": "class-sweep:skills/a1-new-feature/workflows/retro-prose.md:df70770c70fcf5ca",
+    "reason": "Fixed in this diff: the 6b threshold count subtracts kind: machine entries, so a run counts once.",
+    "date": "2026-11-24",
+    "by": "orchestrator",
+    "review": "pending"
+  },
+  {
+    "kind": "class_sweep",
+    "fingerprint": "class-sweep:skills/a1-plan/workflows/04-audit.md:54b4e7b78e3e43b9",
+    "reason": "Not this defect class: this skill writes exactly one retro per run and has no machine-entry carrier, so its gates_fired requirement cannot double count. Cross-skill counting in a1-evolve is out of scope (separate follow-up).",
+    "date": "2026-11-24",
+    "by": "orchestrator",
+    "review": "pending"
   }
 ]
