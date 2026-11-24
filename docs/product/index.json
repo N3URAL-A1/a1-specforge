@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-24T12:33:05.364Z",
+  "generated": "2026-11-24T21:37:22.035Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -423,6 +423,20 @@
       "last_validated": "2026-10-08"
     },
     {
+      "path": "docs/product/audits/2026-11-24-architecture.md",
+      "date": "2026-11-24",
+      "focus": "architecture",
+      "verdict": "gate-ROI counts the same gate run across skill stores (follow-up of fix retro-double-count, PR #119)",
+      "counts": {
+        "blocker": 0,
+        "major": 0,
+        "minor": 1
+      },
+      "open": 1,
+      "fixed": 0,
+      "last_validated": "2026-11-24"
+    },
+    {
       "path": "docs/product/audits/2026-11-24-quality.md",
       "date": "2026-11-24",
       "focus": "quality",
@@ -432,8 +446,8 @@
         "major": 0,
         "minor": 8
       },
-      "open": 8,
-      "fixed": 0,
+      "open": 6,
+      "fixed": 2,
       "last_validated": "2026-11-24"
     }
   ]
