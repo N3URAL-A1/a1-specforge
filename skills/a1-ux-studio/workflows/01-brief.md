@@ -28,7 +28,10 @@ next question. Offer a short example from the template when the user hesitates.
    feeling, do not copy. Never offer to rebuild a reference site; decline
    such a request and keep the reference as mood input.
 3. **Intent** — the goal of the screen, then two choices:
-   Context `brand` or `product`, Viewport `desktop-first` or `mobile parity`.
+   Context `brand`, `product` or `trade`, Viewport `desktop-first` or `mobile parity`.
+   Propose `trade` for a craft or trade business (painter, carpenter, regional
+   trade): its pool holds only craft-fitting families, no editorial or
+   technical look.
    Intent text is required.
 4. **Guardrails** — what must always hold, what must never appear.
 
@@ -45,7 +48,7 @@ these keys:
 {
   "aesthetic": "<text>",
   "reference": "<url, local image path, or empty string>",
-  "intent": { "text": "<text>", "context": "brand|product", "viewport": "desktop-first|mobile parity" },
+  "intent": { "text": "<text>", "context": "brand|product|trade", "viewport": "desktop-first|mobile parity" },
   "guardrails": { "always": ["<item>"], "never": ["<item>"] }
 }
 ```

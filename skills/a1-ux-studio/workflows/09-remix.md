@@ -22,7 +22,7 @@ into the target repo.
 
 2. **Anchors** (optional) — zero to five taste-vault entry ids whose look
    the variants may borrow from. List the available ids first:
-   `node <skill-dir>/scripts/run/run.cjs families --vault-root "$A1_VAULT_ROOT" --context <brand|product>`
+   `node <skill-dir>/scripts/run/run.cjs families --vault-root "$A1_VAULT_ROOT" --context <brand|product|trade>`
    shows `vault_entries` per family. No answer means no anchors.
 
 ## 2. Plan
