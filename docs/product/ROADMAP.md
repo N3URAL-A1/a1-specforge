@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-11-16
+updated: 2026-11-24
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -306,11 +306,11 @@ features:
   - id: 027-lean-pipeline
     milestone: continuous
     title: "Lean pipeline: fewer repeated runs, stops and spawns with the load-bearing gates intact"
-    status: in-flight
-    stage: started
+    status: done
+    stage: done
     depends_on: []
     started: 2026-11-16
-    finished: null
+    finished: 2026-11-24
     spec_path: project/a1-specforge/spec/027-lean-pipeline.md
     plan_path: null
   - id: 028-measured-gap-checks
@@ -409,7 +409,6 @@ None.
 
 ## Changelog
 
-- **2026-10-14** — 015-docs-consolidation -> done — stage transition via `product stage`
 - **2026-10-14** — feature '016-xprov-autonomy' added — new feature via `product add-feature`
 - **2026-10-14** — feature '017-enforced-self-checks' added — new feature via `product add-feature`
 - **2026-10-14** — feature.md created for '016-xprov-autonomy' — formal spec/plan attached via `product feature-init`
@@ -509,6 +508,7 @@ None.
 - **2026-11-15** — 028-measured-gap-checks -> origin-cleanup — stage transition via `product stage`
 - **2026-11-15** — 028-measured-gap-checks -> done — stage transition via `product stage`
 - **2026-11-16** — 027-lean-pipeline -> started — stage transition via `product stage`
+- **2026-11-24** — 027-lean-pipeline -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
