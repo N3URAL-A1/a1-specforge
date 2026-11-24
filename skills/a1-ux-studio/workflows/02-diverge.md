@@ -15,7 +15,7 @@ Claude Code `/design` is optional and never required; without it nothing changes
 The script decides the candidates; do not pick families by hand. Built-in
 list and skill mapping: [../templates/family-catalog.md](../templates/family-catalog.md).
 
-1. Read the brief from `run.md ## Brief`: `Context` (`brand` or `product`)
+1. Read the brief from `run.md ## Brief`: `Context` (`brand`, `product` or `trade`)
    and the Guardrails. Write the Guardrails to a temp JSON file
    (`GR="$(mktemp)"`), e.g. `{"always":["dark mode"],"never":["Inter"]}`.
    Never into the target repo; delete it after the call.
@@ -23,7 +23,7 @@ list and skill mapping: [../templates/family-catalog.md](../templates/family-cat
 
    ```bash
    node <skill-dir>/scripts/run/run.cjs families \
-     --context <brand|product> \
+     --context <brand|product|trade> \
      --project-claude-md <target-repo>/CLAUDE.md \
      --vault-root "$A1_VAULT_ROOT" \
      --guardrails "$GR"
@@ -39,7 +39,7 @@ list and skill mapping: [../templates/family-catalog.md](../templates/family-cat
    |--------|---------|
    | `design-system` | The project's `CLAUDE.md` names `n3urala1-design` or `vf-brand`. Every candidate's `skills` is that design system alone; all 5 tiles use its tokens and fonts. |
    | `vault` | Families from `pattern/taste-vault/`, topped up from the catalog if fewer than 5 fit. |
-   | `builtin` | No design system and no or an empty vault: the 8 catalog families. |
+   | `builtin` | No design system and no or an empty vault: the catalog families for the context (8 for `brand`, 5 for `product` and `trade`). |
 
    For `product`, the script drops every family that lists
    `design-taste-frontend`; no candidate loads it.

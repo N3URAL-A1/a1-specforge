@@ -9,7 +9,7 @@ Placeholders, written below as double-brace tokens around these names:
   aesthetic          brief.aesthetic, verbatim
   reference          brief.reference, verbatim; "none" when empty
   intent_text        brief.intent.text, verbatim
-  intent_context     brief.intent.context: brand | product
+  intent_context     brief.intent.context: brand | product | trade
   intent_viewport    brief.intent.viewport: desktop-first | mobile parity
   guardrails_always  brief.guardrails.always, one "- <item>" line per entry; "- none" when empty
   guardrails_never   brief.guardrails.never, one "- <item>" line per entry; "- none" when empty

@@ -29,7 +29,7 @@ What the screen must achieve for its user, in one or two sentences.
 Required: an empty Intent stops the run before any board is rendered.
 
 - Text: "<who does what on this screen, and what counts as success>"
-- Context: brand | product
+- Context: brand | product | trade
   - brand: marketing, landing, storytelling; the look leads.
   - product: app screen, dashboard, form; the task leads.
 - Viewport: desktop-first | mobile parity

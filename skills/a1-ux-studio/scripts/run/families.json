@@ -1,14 +1,17 @@
 {
-  "_comment": "Built-in family list for run.cjs families (spec 024 FR-016/017/025). Ids are the stable contract with templates/family-catalog.md; keep both files in step. A family whose skills include design-taste-frontend is never offered for Context: product.",
+  "_comment": "Built-in family list for run.cjs families (spec 024 FR-016/017/025). Ids are the stable contract with templates/family-catalog.md; keep both files in step. A family whose skills include design-taste-frontend is never offered for Context: product. Context: trade offers only families that list trade; a family listed for trade only is never offered for brand or product.",
   "families": [
     { "id": "print-tech-paper", "name": "Print tech paper", "descriptor": "Warm paper tones, fine rules, technical-manual typography", "skills": ["minimalist-ui", "wada-farben"], "contexts": ["brand", "product"] },
     { "id": "dither-mono", "name": "Dither mono", "descriptor": "Monochrome, dithered textures, raw grid", "skills": ["industrial-brutalist-ui"], "contexts": ["brand", "product"] },
-    { "id": "vast-quiet-cinematic", "name": "Vast quiet cinematic", "descriptor": "Wide space, slow pacing, large imagery", "skills": ["design-taste-frontend", "frontend-design"], "contexts": ["brand", "product"] },
+    { "id": "vast-quiet-cinematic", "name": "Vast quiet cinematic", "descriptor": "Wide space, slow pacing, large imagery", "skills": ["design-taste-frontend", "frontend-design"], "contexts": ["brand", "product", "trade"] },
     { "id": "technical-systems", "name": "Technical systems", "descriptor": "Dense, legible, tool-like interfaces", "skills": ["industrial-brutalist-ui", "ui-ux-pro-max"], "contexts": ["product"] },
     { "id": "product-led-minimalism", "name": "Product-led minimalism", "descriptor": "The product is the hero, chrome stays quiet", "skills": ["minimalist-ui", "ui-ux-pro-max"], "contexts": ["product"] },
-    { "id": "luminous-futurism", "name": "Luminous futurism", "descriptor": "Glow, gradients, forward-looking surfaces", "skills": ["design-taste-frontend", "frontend-design"], "contexts": ["brand"] },
+    { "id": "luminous-futurism", "name": "Luminous futurism", "descriptor": "Glow, gradients, forward-looking surfaces", "skills": ["design-taste-frontend", "frontend-design"], "contexts": ["brand", "trade"] },
     { "id": "monumental-editorial", "name": "Monumental editorial", "descriptor": "Oversized type, magazine rhythm", "skills": ["design-taste-frontend", "frontend-design"], "contexts": ["brand"] },
-    { "id": "classical-remix", "name": "Classical remix", "descriptor": "Serif heritage with a modern twist", "skills": ["frontend-design", "wada-farben"], "contexts": ["brand", "product"] }
+    { "id": "classical-remix", "name": "Classical remix", "descriptor": "Serif heritage with a modern twist", "skills": ["frontend-design", "wada-farben"], "contexts": ["brand", "product"] },
+    { "id": "warm-craft-workshop", "name": "Warm craft workshop", "descriptor": "Lime and linen tones, terracotta accent, rounded friendly sans, big call button", "skills": ["frontend-design", "wada-farben"], "contexts": ["trade"] },
+    { "id": "colour-consult-craft", "name": "Colour consult craft", "descriptor": "Light and calm, a fan of muted wall colours as the signature, colour advice up front", "skills": ["frontend-design", "wada-farben"], "contexts": ["trade"] },
+    { "id": "regional-trust-craft", "name": "Regional trust craft", "descriptor": "Grounded and local, clear facts, family business and master craftsman to the fore", "skills": ["minimalist-ui", "wada-farben"], "contexts": ["trade"] }
   ],
   "designSystems": [
     { "skill": "n3urala1-design", "fonts": ["Inter"] },

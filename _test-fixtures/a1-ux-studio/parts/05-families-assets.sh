@@ -44,10 +44,10 @@ else
   new_frun
   F_EMPTY="$A1_FX_ROOT/empty-claude.md"; printf '# Project\nNo design system here.\n' > "$F_EMPTY"
 
-  # F7 RED: add a 9th family object to families.json (count assert fails); or put an unlisted skill on one.
+  # F7 RED: add a 12th family object to families.json (count assert fails); or put an unlisted skill on one.
   n_fam="$(node -e 'const d=require(process.argv[1]);process.stdout.write(String(d.families.length))' "$F_DATA")"
   n_badskill="$(node -e 'const d=require(process.argv[1]);const ok=new Set(["design-taste-frontend","minimalist-ui","industrial-brutalist-ui","ui-ux-pro-max","frontend-design","n3urala1-design","vf-brand","wada-farben"]);process.stdout.write(String(d.families.filter(f=>f.skills.length<1||f.skills.some(s=>!ok.has(s))).length))' "$F_DATA")"
-  if [[ $n_fam -eq 8 && $n_badskill -eq 0 ]]; then ok "F7 [FR-025] built-in data file: 8 families, each mapped only to allowed style skills"; else bad "F7 [FR-025] families.json (families=$n_fam badskill=$n_badskill)"; fi
+  if [[ $n_fam -eq 11 && $n_badskill -eq 0 ]]; then ok "F7 [FR-025] built-in data file: 11 families, each mapped only to allowed style skills"; else bad "F7 [FR-025] families.json (families=$n_fam badskill=$n_badskill)"; fi
 
   # F1 RED: in families.cjs orderForContext() drop the `!loadsTaste(f)` filter (product then offers taste families).
   fx families --context product --project-claude-md "$F_EMPTY" --vault-root "$F_VAULT"
@@ -61,6 +61,21 @@ else
     ok "F1 [FR-017] product: 5 candidates, 0 load design-taste-frontend; brand: 5 candidates, $n_taste_b may"
   else
     bad "F1 [FR-017] context filter (product=$n_cand/$n_taste brand=$n_cand_b/$n_taste_b rc=$rc_p/$RC err='$ERR')"
+  fi
+
+  # F1t RED: in families.cjs usableFor() return `general` for trade (editorial/technical families then appear),
+  # or drop the tradeOnly filter (brand then offers craft families).
+  fx families --context trade --project-claude-md "$F_EMPTY" --vault-root "$F_VAULT"
+  rc_t=$RC
+  pool_t="$(jq_ "$OUT" 'd.pool.slice().sort().join(",")')"
+  n_cand_t="$(jq_ "$OUT" 'd.candidates.length')"
+  fx families --context brand --project-claude-md "$F_EMPTY" --vault-root "$F_VAULT"
+  n_craft_b="$(jq_ "$OUT" 'd.pool.filter(id=>id.endsWith("-craft")||id==="warm-craft-workshop").length')"
+  want_t="colour-consult-craft,luminous-futurism,regional-trust-craft,vast-quiet-cinematic,warm-craft-workshop"
+  if [[ $rc_t -eq 0 && $RC -eq 0 && "$pool_t" == "$want_t" && $n_cand_t -eq 5 && $n_craft_b -eq 0 ]]; then
+    ok "F1t [FR-017] trade: pool is exactly the 5 craft-fitting families (no editorial/technical); brand offers no trade-only family"
+  else
+    bad "F1t [FR-017] trade context (pool='$pool_t' cand=$n_cand_t brand_craft=$n_craft_b rc=$rc_t/$RC err='$ERR')"
   fi
 
   # F2 RED: in families.cjs detectDesignSystems() return [] (the CLAUDE.md match is then ignored).

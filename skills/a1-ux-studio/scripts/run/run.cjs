@@ -17,7 +17,7 @@ const assets = require('./assets.cjs');
 const families = require('./families.cjs');
 const { withTasteVaultRule } = require('../taste/board-guard.cjs');
 const { CTRL_RE, Refusal, parseArgs, requireSlug, resolveDate, clean } = require('./common.cjs');
-const CONTEXTS = Object.freeze(['brand', 'product']);
+const CONTEXTS = Object.freeze(['brand', 'product', 'trade']);
 const VIEWPORTS = Object.freeze(['desktop-first', 'mobile parity']);
 const MAX_REF_BYTES = 20 * 1024 * 1024;
 const REF_TIMEOUT_MS = 5000;
@@ -233,7 +233,7 @@ const USAGE = 'usage: run.cjs init --project <slug> (--spec <id> | --topic <slug
   + '       run.cjs require-pick --run-dir <d> --board diverge|converge\n'
   + '       run.cjs reroll --run-dir <d> --board diverge|converge [--date YYYY-MM-DD]\n'
   + '       run.cjs board-check --run-dir <d> --kind diverge|converge\n'
-  + '       run.cjs families [--context brand|product] [--project-claude-md <file>] [--vault-root <dir>] [--guardrails <json-file>]\n'
+  + '       run.cjs families [--context brand|product|trade] [--project-claude-md <file>] [--vault-root <dir>] [--guardrails <json-file>]\n'
   + '       run.cjs asset-slot --run-dir <d> --name <slug> --prompt <text> [--approved]\n'
   + '       run.cjs asset-missing --run-dir <d> [--name <slug> --reason <text>]';
 

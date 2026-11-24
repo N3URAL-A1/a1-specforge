@@ -9,7 +9,7 @@ const path = require('path');
 const { Refusal, requireText, clean } = require('./common.cjs');
 
 const DATA = JSON.parse(fs.readFileSync(path.join(__dirname, 'families.json'), 'utf8'));
-const CONTEXTS = Object.freeze(['brand', 'product']);
+const CONTEXTS = Object.freeze(['brand', 'product', 'trade']);
 const TASTE_SKILL = 'design-taste-frontend';
 const CANDIDATE_COUNT = 5;
 const MAX_FILE_BYTES = 1024 * 1024;
@@ -89,9 +89,18 @@ function vaultFamilies(vaultRoot, warnings) {
 const loadsTaste = (f) => f.skills.includes(TASTE_SKILL);
 const contextRank = (ctx) => (f) => (f.contexts.includes(ctx) ? 0 : 1);
 
+const tradeOnly = (f) => f.contexts.every((c) => c === 'trade');
+
+/** Families a context may offer: trade offers only trade families; brand/product never offer trade-only ones. */
+function usableFor(pool, ctx) {
+  if (ctx === 'trade') return pool.filter((f) => f.contexts.includes('trade'));
+  const general = pool.filter((f) => !tradeOnly(f));
+  return ctx === 'product' ? general.filter((f) => !loadsTaste(f)) : general;
+}
+
 /** Context filter then stable ordering: families written for the context first, catalog order kept. */
 function orderForContext(pool, ctx) {
-  const usable = ctx === 'product' ? pool.filter((f) => !loadsTaste(f)) : pool;
+  const usable = usableFor(pool, ctx);
   const rank = contextRank(ctx);
   return usable.map((f, i) => ({ f, i })).sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i).map((x) => x.f);
 }

@@ -72,7 +72,7 @@ UX/<screen-name>: Variant <X> chosen. Reason: <1-sentence>.
   `Default adopted:` pick, say that the default was adopted.
 
 Below the line, give the link to `<run-dir>/run.md` and a brief summary in
-3 to 5 bullets: aesthetic, context (`brand` or `product`), viewport, gate
+3 to 5 bullets: aesthetic, context (`brand`, `product` or `trade`), viewport, gate
 status, and every accepted item with Robert's reason.
 
 | Caller | Who writes what |
