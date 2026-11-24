@@ -34,7 +34,7 @@ omit the field.
 **Exception: the a1-new-feature close-out prose retro** (`retro-prose.md`, written only when `feature close` says
 `prose_required`) carries `retro_of: <spec>#<pr>` and **no** `gates_fired`. The `kind: machine` entry that
 `feature close` appends from the same gate logs is the one gate-ROI carrier of that run; a second list would count it twice.
-Only `feature close` writes `kind: machine` / `machine_record`; `retro validate` refuses a block that carries them.
+Only `feature close` writes `kind: machine` / `machine_record`; `retro validate` refuses a file with a line starting with `kind: machine` or `machine_record:` (any raw line, in any block or body).
 
 Why this is not optional: a1-evolve's gate-ROI step computes which gates earn
 their cost and which are dead weight, and it needs ≥5 retros carrying the

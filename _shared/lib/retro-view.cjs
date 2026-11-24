@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 
 const DELIM_RE = /^---[ \t]*$/;
-const MACHINE_KEY_RE = /^\s*(?:kind\s*:\s*machine|machine_record\s*:)/;
+const MACHINE_KEY_RE = /^\s*(?:kind\s*:\s*machine\s*$|machine_record\s*:)/;
 
 /** @param {string} text @returns {string} text with every Unicode line break turned into \n */
 function normalizeNewlines(text) {

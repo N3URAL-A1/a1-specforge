@@ -126,8 +126,8 @@ function readStore(file) {
  * The frontmatter heads of the store, read through retro-view (the view `retro validate` uses: newlines normalised, a block closes
  * at the first line that starts with `---`). A head starts only at the file start or after a blank line (every entry write puts one
  * there), has `date:` as its first line and is closed by a `---` line (or EOF), so a block quoted inside a prose body (F-003), or
- * one cut by `---x`, is not a head. `bare` is true when the next non-blank line after the closing `---` is `---`, a `#` line or EOF:
- * a machine head has no body.
+ * one cut by `---x`, is not a head. `bare` is true when the next non-blank line after the closing `---` is `---` or EOF:
+ * a machine head has no body (a `#` line after it is a body: a pasted head followed by `## Notes` is no record).
  * @returns {{lines: string[], bare: boolean}[]}
  */
 function heads(text) {
@@ -137,7 +137,7 @@ function heads(text) {
     .filter((b) => /^date:/.test(b.lines[0] || '') && (b.open === 0 || lines[b.open - 1].trim() === '') && b.closedByDelim)
     .map((b) => {
       const next = b.close >= lines.length ? null : nextLine(b.close + 1);
-      return { lines: b.lines, bare: next === null || isDelim(next) || next.startsWith('#') };
+      return { lines: b.lines, bare: next === null || isDelim(next) };
     });
 }
 

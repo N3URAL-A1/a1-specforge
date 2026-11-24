@@ -945,7 +945,7 @@ SPEC_LOG="$REF_REPO/.a1/phases/fx-spec/gate-log.jsonl"
 mkdir -p "$REF_REPO/.a1/phases/pr-9" && ln -s ../pr-7/gate-log.jsonl "$REF_REPO/.a1/phases/pr-9/gate-log.jsonl"   # a log that is a link to another log
 ln -s pr-7 "$REF_REPO/.a1/phases/pr-10"                                                                            # a phase dir that is a link
 node -e 'const r=n=>({type:"code_scope",paths:["src/"],by:n,at:"2026-11-24T00:00:00.000Z",stage:"implement"});
-  require("fs").writeFileSync(process.argv[1]+"/.a1/reservations.json",JSON.stringify({reservations:[r("fx-spec"),r("fx-sym")]}))' "$REF_REPO"
+  require("fs").writeFileSync(process.argv[1]+"/.a1/reservations.json",JSON.stringify({reservations:[r("fx-spec"),r("fx-sym"),r("pr-7")]}))' "$REF_REPO"
 rv() { # rv <retro> <phase> [--gate-log <log> ...]: run in REF_REPO under --phase <phase>; OUT RC ERR
   local f="$1" ph="$2"; shift 2
   OUT="$(cd "$REF_REPO" && node "$TOOLS" retro validate "$f" "$@" --enforced-since $SINCE --phase "$ph" 2>"$GL_WORK/err")"; RC=$?; ERR="$(cat "$GL_WORK/err")"
@@ -1048,7 +1048,7 @@ gl_check "L15h retro_of without --defer-to-machine, bound-looking names and both
 rv "$R2-f.md" retro-pr-7 --gate-log "$REF_LOG"
 gl_check "L15i f.md (retro_of pr-7#7, standalone a1-pr-review) without the flag: exit 1 bad_retro_of + missing_blocking_fail" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
 rv "$R2-f.md" retro-pr-7 --gate-log "$REF_LOG" --defer-to-machine pr-7#7
-gl_check "L15i2 f.md even WITH --defer-to-machine pr-7#7 (a pr-<n> spec is no feature): exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+gl_check "L15i2 f.md even WITH --defer-to-machine pr-7#7 and a reservation by pr-7 (a pr-<n> spec is no feature): exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
 rv "$R2-g.md" retro-fix-bug1 --gate-log "$REF_REPO/.a1/phases/fix-bug1/gate-log.jsonl" --gate-log "$REF_LOG"
 gl_check "L15j g.md (a1-fix style fix-bug1#7, two scopes, no flag): exit 1 bad_retro_of + missing_blocking_fail" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
 rv "$R2-g.md" retro-fix-bug1 --gate-log "$REF_REPO/.a1/phases/fix-bug1/gate-log.jsonl" --gate-log "$REF_LOG" --defer-to-machine fix-bug1#7
@@ -1085,6 +1085,28 @@ if grep -q '^NBLOCKS=' "$GL_WORK/prose-cmd.sh"; then bad "L15q retro-prose.md ha
   [[ $PRC -eq 0 ]] && ok "L15q the retro validate block of retro-prose.md, run as written on h.md: exit 0" || bad "L15q (rc=$PRC out=$PROSE_OUT)"
   grep -q -- '--defer-to-machine' "$GL_WORK/prose-cmd.sh" && [[ "$(grep -o -- '--gate-log' "$GL_WORK/prose-cmd.sh" | wc -l)" -ge 2 ]] && ok "L15q2 the documented command names the flag and two --gate-log" || bad "L15q2"
 fi
+
+# L15r (review round 3): in a real git worktree only the PRIMARY checkout's reservations count; the worktree copy is a stale snapshot.
+# Measured red with a mutant that reads the root's own file instead of the primary (primaryRoot() returns root): L15r1; with the
+# worktree file ignored but the primary lookup off (holdsScope false): L15r2.
+WT="$GL_WORK/ref-wt"
+git -C "$REF_REPO" worktree add -q -b wt-r3 "$WT" HEAD || exit 1
+mkdir -p "$WT/.a1"
+for sp in fx-wt1 fx-wt2 pr-7; do gl_run "$WT" realpath-check run --phase "$sp" --diff-base HEAD~1 --project .; done
+node -e 'const r=n=>({type:"code_scope",paths:["src/"],by:n,at:"2026-11-24T00:00:00.000Z",stage:"implement"});
+  const w=require("fs").writeFileSync, [a,b,c]=process.argv.slice(1);
+  w(a+"/.a1/reservations.json",JSON.stringify({reservations:[r("fx-wt1")]}));   // snapshot (worktree) has fx-wt1
+  w(c+"/.a1/reservations.json",JSON.stringify({reservations:[r("fx-wt2")]}))    // primary has fx-wt2
+  ' "$WT" x "$REF_REPO"
+wt_rv() { # wt_rv <spec>: validate a retro_of <spec>#7 prose retro from inside the worktree
+  retro_ref "$GL_WORK/l15wt-$1.md" "retro_of: $1#7"
+  OUT="$(cd "$WT" && node "$TOOLS" retro validate "$GL_WORK/l15wt-$1.md" --gate-log "$WT/.a1/phases/$1/gate-log.jsonl" --gate-log "$WT/.a1/phases/pr-7/gate-log.jsonl" --defer-to-machine "$1#7" --enforced-since $SINCE --phase "retro-$1" 2>"$GL_WORK/err")"; RC=$?; ERR="$(cat "$GL_WORK/err")"
+}
+wt_rv fx-wt1
+gl_check "L15r1 worktree: the entry is only in the worktree snapshot, not in the primary: exit 1 bad_retro_of" 1 'j.gate_log.problems.map(p=>p.rule).sort().join(",")' "bad_retro_of,missing_blocking_fail"
+[[ "$OUT" == *"in the primary checkout"* ]] && ok "L15r1b the message names the primary checkout" || bad "L15r1b (out=$OUT)"
+wt_rv fx-wt2
+gl_check "L15r2 worktree: the entry is in the primary, not in the snapshot: exit 0, deferred" 0 'j.gate_log.problems.length+"/"+JSON.stringify(j.gate_log.deferred.retro_of)' '0/["fx-wt2#7"]'
 
 printf '%s\n' "${results[@]}"
 echo "----"

@@ -221,6 +221,9 @@ const entryOf = (spec, pr, gates) => M.renderEntry({ date: '2026-11-23', spec, p
   const blank = mkStore('store17c', '---\ndate: 2026-11-01\nresult: pass\n---\n\nPasted:\n\n' + quoted + '\nend of the paste.\n');
   eq('MR17c blank line before the pasted head: not found', M.findMachineRecord({ store: blank, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
   eq('MR17c the append still happens', M.appendMachineRetro({ store: blank, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'appended');
+  // MR17c2 the same paste followed by a `## Notes` heading: a `#` line is a body, not a delimiter.
+  const notes = mkStore('store17c2', '---\ndate: 2026-11-01\nresult: pass\n---\n\nPasted:\n\n' + quoted + '\n## Notes\n\nthe reviewer said so\n');
+  eq('MR17c2 pasted head followed by ## Notes: not found', M.findMachineRecord({ store: notes, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
   // MR17d the pasted head is the last thing of the prose, but a prose body follows it: a machine head has no body.
   const body = mkStore('store17d', quoted + '\nA body under the head.\n');
   eq('MR17d a head with a body under it is not a machine record', M.findMachineRecord({ store: body, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
@@ -263,16 +266,30 @@ for (const [label, nl] of [['CRLF', '\r\n'], ['CR', '\r'], ['LS', '\u2028'], ['N
   eq(`MR20 ${label} line ends: the machine record is found`, M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }).found, true);
   eq(`MR20 ${label}: a second append is already_recorded`, M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'already_recorded');
 }
-// MR21 (D) bare: the next non-blank line after the closing --- is `---`, a `#` line or EOF; any other text makes it a prose entry.
+// MR21 (D) bare: the next non-blank line after the closing --- is `---` or EOF (round 3: a `#` line is a body); any other text makes it a prose entry.
 {
   const head = entryOf('fx-spec', 7);
   let k = 0;
   const rec = (tail) => M.findMachineRecord({ store: mkStore(`store21-${k++}`, head + tail), spec: 'fx-spec', pr: 7 }).found;
-  eq('MR21 followed by a # heading: found', rec('\n# Section\n\ntext\n'), true);
+  eq('MR21 followed by a # heading: not found (round 3)', rec('\n# Section\n\ntext\n'), false);
   eq('MR21 followed by a text line: not found', rec('\nsome prose line\n'), false);
   eq('MR21 followed by the next entry: found', rec('\n---\ndate: 2026-11-30\n---\n\nprose\n'), true);
   // the head's closing line is `---x`, not a delimiter: no machine head
   eq('MR21 closing line ---x: not found', M.findMachineRecord({ store: mkStore('store21x', head.replace(/\n---\n$/, '\n---x\n')), spec: 'fx-spec', pr: 7 }).found, false);
+}
+
+// MR22 (review round 3) the raw-text ban (retro-view) is a superset of what the store reader accepts as a head, and anchored at the end
+// of the kind value: `kind: machinery` is no machine key. Measured red without the `\s*$` anchor: MR22a.
+{
+  const V = require(path.join(LIB, 'retro-view.cjs'));
+  eq('MR22a kind: machinery is not banned', V.machineKeyLines('---\ndate: 2026-11-01\nkind: machinery\n---\n'), []);
+  for (const tail of ['', '   ', '\t', '\u00a0', '\ufeff', '\u3000']) {
+    const text = '---\ndate: 2026-11-01\nkind: machine' + tail + '\ngates_fired: []\nmachine_record: fx-spec#7\n---\n';
+    const head = M.findMachineRecord({ store: mkStore('store22', text), spec: 'fx-spec', pr: 7 }).found;
+    const banned = V.machineKeyLines(text).some((l) => /^kind\s*:\s*machine/.test(l));
+    check('MR22b kind: machine + ' + JSON.stringify(tail) + ': banned whenever the store reader accepts it', !head || banned);
+    check('MR22c kind: machine + ' + JSON.stringify(tail) + ': banned', banned);
+  }
 }
 
 done();

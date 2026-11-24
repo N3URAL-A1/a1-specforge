@@ -7,7 +7,7 @@
 // standalone a1-pr-review (retro_of pr-7#7) or an a1-fix run (fix-bug1#7) satisfied with no carrier ever written. Now the caller
 // says so with the flag, and the claim must hold on disk:
 //   1. the flag equals the block's retro_of; <spec> is not `pr-<n>`
-//   2. `.a1/reservations.json` (this repo root, or the primary checkout when run from a worktree) holds a `code_scope` entry
+//   2. `.a1/reservations.json` (the primary checkout: the root itself, or the parent of the git common dir when run from a worktree; a worktree's copy is a stale snapshot) holds a `code_scope` entry
 //      with by == <spec> (the reservation is released by `feature close`, which runs after the prose retro: 05-merge item 3)
 //   3. one --gate-log resolves (realpath) to <root>/.a1/phases/<spec>/gate-log.jsonl and one to <root>/.a1/phases/pr-<pr>/gate-log.jsonl,
 //      with <root> the realpath of the repo root: a log outside the root or reached through a link does not count
@@ -17,27 +17,37 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { loadReservations, reservationsFile } = require('./locks.cjs');
 
 const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*#[1-9][0-9]*$/;
 const PR_SPEC_RE = /^pr-[0-9]+$/;
 const LOG_NAME = 'gate-log.jsonl';
 
-/** @returns {string[]} the repo root and, from a worktree, the primary checkout that holds the shared `.a1/reservations.json` */
-function reservationRoots(root) {
-  const roots = [root];
-  const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
-  if (r.status === 0 && r.stdout.trim() !== '' && path.basename(r.stdout.trim()) === '.git') roots.push(path.dirname(r.stdout.trim()));
-  return roots;
+const GIT_ENV_DROP = ['GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE'];
+
+/**
+ * The checkout whose `.a1/reservations.json` counts: the root itself when it is the primary checkout (or no git repo), else the
+ * parent of the git common dir. A worktree's own copy is a stale committed snapshot and is never read. `--git-common-dir` is resolved
+ * against the cwd (no `--path-format=absolute`, git >= 2.31); git runs with the repo-pointing env vars dropped.
+ * @returns {string|null} null when there is no primary checkout (a bare common dir)
+ */
+function primaryRoot(root) {
+  const env = { ...process.env };
+  for (const k of GIT_ENV_DROP) delete env[k];
+  const r = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd: root, encoding: 'utf8', env });
+  const out = r.status === 0 ? r.stdout.trim() : '';
+  if (out === '') return root;
+  const common = real(path.resolve(root, out));
+  if (common === null || path.basename(common) !== '.git') return null;
+  return path.dirname(common);
 }
 
-/** @returns {boolean} some reservations file holds a code_scope entry of `spec` (an unreadable or malformed file holds none) */
-function holdsScope(roots, spec) {
-  return roots.some((r) => {
-    try {
-      const list = JSON.parse(fs.readFileSync(path.join(r, '.a1', 'reservations.json'), 'utf8')).reservations;
-      return Array.isArray(list) && list.some((x) => x && x.type === 'code_scope' && x.by === spec);
-    } catch (_e) { return false; }
-  });
+/** @returns {boolean} the primary checkout's reservations file holds a code_scope entry of `spec` (unreadable or malformed holds none) */
+function holdsScope(root, spec) {
+  const primary = primaryRoot(root);
+  if (primary === null) return false;
+  const list = loadReservations(reservationsFile({ file: path.join(primary, '.a1', 'reservations.json') })).reservations;
+  return list.some((x) => x && x.type === 'code_scope' && x.by === spec);
 }
 
 function real(p) {
@@ -59,7 +69,7 @@ function bindingProblem(key, { defer, paths, root }) {
   if (PR_SPEC_RE.test(spec)) return `retro_of names ${spec}, a PR review scope, not an a1-new-feature spec: its gates have no machine entry to defer to`;
   const rootReal = real(root);
   if (rootReal === null) return 'the repo root cannot be resolved';
-  if (!holdsScope(reservationRoots(rootReal), spec)) return `no code_scope reservation of ${spec} in .a1/reservations.json: feature close has no run to record for it`;
+  if (!holdsScope(rootReal, spec)) return `no code_scope reservation by ${spec} in the primary checkout`;
   const have = new Set(paths.map(real).filter((p) => p !== null));
   for (const scope of [spec, `pr-${pr}`]) {
     const want = path.join(rootReal, '.a1', 'phases', scope, LOG_NAME);
