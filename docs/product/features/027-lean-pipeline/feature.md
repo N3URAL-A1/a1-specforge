@@ -3,11 +3,11 @@ id: 027-lean-pipeline
 project: a1-specforge
 milestone: continuous
 title: "Lean pipeline: fewer repeated runs, stops and spawns with the load-bearing gates intact"
-status: in-flight
-stage: started
+status: done
+stage: done
 depends_on: []
 started: 2026-11-16
-finished: null
+finished: 2026-11-24
 spec_path: project/a1-specforge/spec/027-lean-pipeline.md
 plan_path: null
 schema_version: 1
