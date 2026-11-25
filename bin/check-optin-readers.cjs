@@ -116,13 +116,16 @@ function listFiles(root) {
   try { realRoot = fs.realpathSync(root); } catch (_e) { return usage('--root cannot be resolved'); }
   try { if (!fs.statSync(realRoot).isDirectory()) return usage('--root is not a directory'); } catch (_e) { return usage('--root is not a directory'); }
   const ctx = { realRoot, visited: new Set(), files: [], unscanned: [] };
+  let present = 0; // a scan root that exists, readable or not
   for (const sub of SCAN_ROOTS) {
     try { fs.lstatSync(path.join(realRoot, sub)); } catch (e) {
-      if (e.code !== 'ENOENT') ctx.unscanned.push({ file: sub, reason: 'unreadable' }); // absent (ENOENT): nothing to scan
+      if (e.code !== 'ENOENT') { present += 1; ctx.unscanned.push({ file: sub, reason: 'unreadable' }); } // absent (ENOENT): nothing to scan
       continue;
     }
+    present += 1;
     visit(ctx, '', sub);
   }
+  if (present === 0) return usage('--root holds none of the scan roots'); // a wrong root never scans nothing and passes
   return { files: ctx.files, unscanned: ctx.unscanned, realRoot };
 }
 

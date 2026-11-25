@@ -7,7 +7,7 @@
 #   OL6  .last-run.json has readers (04b, 01-load)                    OL7  self-repair with the log off: the observation holds `recovery`
 #   OL8  line-exact allowlist (an extra line in help-xprov.cjs reads) OL9  buildObservation rejects an unknown recovery action
 #   OL12-OL16 allowlist contract: duplicate line, widened scan, stale entry, optin-logs.cjs itself, contains < 20
-#   OL20-OL29 canonical symlink walk, root containment, unreadable paths, dead entry, relative --root, broken links, bad --root (red-making changes at the OL20 block)
+#   OL20-OL30 canonical symlink walk, root containment, unreadable paths, dead entry, relative --root, broken links, bad --root (red-making changes at the OL20 block)
 #   OL10 compactRecovery is total, bounded and leaks nothing          OL11 compactRecovery keeps `fallback`
 # Helpers are copied from parts 06 and 29 (a part must run alone in its shard).
 
@@ -188,7 +188,7 @@ done
 cp_tree40 "$TMP40/plant19b"; rm -f "$TMP40/plant19b/_shared/lib/optin-logs.cjs"
 run40 "$TMP40/plant19b" rd19b; assert_json "OL19 a root without optin-logs.cjs uses the fallback" "$(cat "$TMP40/rd19b.json")" "j.allowlist" "fallback"
 assert_json "OL19 the real tree uses the root allowlist" "$(cat "$TMP40/rd.json")" "j.allowlist" "root"
-# OL20-OL29: canonical symlink walk, root containment, unreadable paths, dead entries, broken links, bad --root (bug 2026-11-25-optin-checker-symlinks-4).
+# OL20-OL30: canonical symlink walk, root containment, unreadable paths, dead entries, broken links, bad --root (bug 2026-11-25-optin-checker-symlinks-4).
 # Each case names the one production change that turns it red (CONVENTIONS RED proof); every one was run on a git archive copy.
 #   OL20 (parent link): dropping the `SCAN_ROOTS.includes(canon.split('/')[0])` test in visit(): the link to the root walks docs/ (a reader
 #        outside the scanned roots, under skills/up/). OL13 loop13 is the same link in the big plant.
@@ -205,6 +205,7 @@ assert_json "OL19 the real tree uses the root allowlist" "$(cat "$TMP40/rd.json"
 #   OL27 (--root is a file): dropping the `isDirectory()` check in listFiles(): rc 1 (every scan root listed unreadable) instead of exit 2.
 #   OL28 (a file under a read-only dir): the old catch labelling every realpath failure 'broken symlink' (EACCES is 'unreadable').
 #   OL29 (root without access): the per-scan-root lstat catch skipping every error (`continue` without the ENOENT test): rc 0, nothing scanned.
+#   OL30 (empty dir as --root): dropping the `present === 0` usage exit in listFiles(): rc 1 only through stale entries (rc 0 for a name without allowlist entries), not exit 2.
 # OL20: a link to the parent directory: the tree is read once, under its own paths
 cp_tree40 "$TMP40/plant20"; mkdir "$TMP40/plant20/docs"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/plant20/docs/notes.md"; printf 'Read PLAN-REVIEW-LOG.md for the history.\n' >> "$TMP40/plant20/agents/$(basename "$af40")"; ln -s .. "$TMP40/plant20/skills/up"
 run40 "$TMP40/plant20" rd20; assert_rc "OL20 a parent link plus one real reader" 1 "$rc40"
@@ -247,6 +248,8 @@ run40 "$TMP40/plant26" rd26; assert_rc "OL26 dangling links fail the check (D1)"
 assert_json "OL26 unscanned: exactly the two links, 'broken symlink'" "$(cat "$TMP40/rd26.json")" "JSON.stringify(j.unscanned.map((u) => u.file + ':' + u.reason).sort())" '["agents/dang.md:broken symlink","hooks:broken symlink"]'
 # OL27: --root pointing to a file is a usage error (exit 2), never a clean scan of nothing
 printf 'x\n' > "$TMP40/rootfile27"; node "$CHECK40" --name "$OLNAME40" --root "$TMP40/rootfile27" >/dev/null 2>&1; assert_rc "OL27 --root is a file" 2 "$?"
+# OL30 (follow-up F-007): a directory holding none of the scan roots is a usage error (exit 2), never a clean scan of nothing
+mkdir -p "$TMP40/emptyroot30"; node "$CHECK40" --name "$OLNAME40" --root "$TMP40/emptyroot30" >/dev/null 2>&1; assert_rc "OL30 --root holds no scan root" 2 "$?"
 if [[ "$(id -u)" == 0 ]]; then echo "SKIP  OL28/OL29 access cases (running as uid 0)"; else
   # OL28: a path that cannot be resolved because the directory has no x bit is 'unreadable', not a broken link
   cp_tree40 "$TMP40/plant28"; mkdir "$TMP40/plant28/agents/ro"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/plant28/agents/ro/x.md"; chmod 444 "$TMP40/plant28/agents/ro"
