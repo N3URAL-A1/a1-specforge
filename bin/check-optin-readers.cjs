@@ -9,7 +9,7 @@
 // (relative to realpath(root)), so an alias or a link to a parent never rescans a tree. A link whose target lies outside the root is
 // not walked and goes to `unscanned` ('outside root'); a target inside the root but outside the scanned roots is not walked;
 // the skip lists (_shared/vendor, node_modules) apply to the canonical path. A link that cannot be resolved (ENOENT, ELOOP, ENOTDIR: 'broken symlink') and a
-// path that cannot be resolved or read for another reason such as EACCES ('unreadable') are listed in `unscanned` too. --root is resolved against the cwd and must be a directory (else exit 2).
+// path that cannot be resolved or read for another reason such as EACCES ('unreadable') are listed in `unscanned` too. --root is resolved against the cwd and must be a directory holding at least one of the scan roots (else exit 2); a scan root that exists but cannot be read counts as present and goes to `unscanned`, and so does any entry with a scan root's name (a plain file named `bin` counts as present and scans nothing).
 // The allowlist contract is enforced here, not only documented:
 //   - every `contains` is at least 20 characters, else `contract_violations` (checked before the scan);
 //   - an entry whose `contains` names no OPTIN_FILES entry can never cover a line of a candidate: `contract_violations` (checked before the scan);
