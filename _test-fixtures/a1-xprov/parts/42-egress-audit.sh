@@ -186,6 +186,8 @@ ea10() { HOME="$HOME" node -e '
 rm -f "$(EGRESS42)"
 assert_eq "EA10 an off-format tree is refused" "$(ea10 "$(printf 'a%.0s' {1..40})" not-a-git-id)" "egress_audit_input"
 assert_eq "EA10 an off-format commit is refused" "$(ea10 "$(printf 'A%.0s' {1..40})" "$(printf 'b%.0s' {1..40})")" "egress_audit_input"
+assert_eq "EA10 a 41-hex tree is refused (anchors, sha1 length)" "$(ea10 "$(printf 'a%.0s' {1..40})" "$(printf 'b%.0s' {1..41})")" "egress_audit_input"
+assert_eq "EA10 a 65-hex commit is refused (sha256 length is exact)" "$(ea10 "$(printf 'a%.0s' {1..65})" "$(printf 'b%.0s' {1..40})")" "egress_audit_input"
 assert_eq "EA10 sha1 commit and sha256 tree are accepted" "$(ea10 "$(printf 'a%.0s' {1..40})" "$(printf 'b%.0s' {1..64})")" "appended"
 assert_eq "EA10 only the accepted line was written" "$(lines42)" "1"
 
