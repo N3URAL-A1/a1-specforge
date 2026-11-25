@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-25T07:40:54.660Z",
+  "generated": "2026-11-25T11:24:58.592Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -446,8 +446,8 @@
         "major": 0,
         "minor": 8
       },
-      "open": 1,
-      "fixed": 7,
+      "open": 0,
+      "fixed": 8,
       "last_validated": "2026-11-24"
     },
     {
