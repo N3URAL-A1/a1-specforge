@@ -531,6 +531,11 @@ ${CONSENT_HELP}
                   ~/.a1-xprov/allowlist-approvals.json (written only by
                   allowlist approve), ~/.a1-xprov/permit-denials.json (written
                   only by permit / permit --deny).
+                  ~/.a1-xprov/egress-audit.jsonl (0600, hash-chained, always on: one
+                  line per Codex runner spawn of xprov run, written before the
+                  spawn with gate, mode, phase, round, lane, commit and the sha256
+                  of the exact input sent; hashes only, no contents; a failed
+                  append refuses the spawn; never deleted by gc).
                   ENV: A1_XPROV_CODEX_HOME (optional; default ~/.codex-a1-review).
                   Fixture suite: _test-fixtures/a1-xprov/run-tests.sh (harness)
                   + parts/NN-<wave>.sh; runner fakes live in fake/, captured

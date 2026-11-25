@@ -98,6 +98,7 @@ const { permitCheck } = require('./xprov-permit.cjs');
 const { homeSymlinks, skillsDirsProblem, resolveTool } = require('./xprov-preflight.cjs');
 const { SNAP_PREFIX, REPO_LOCAL_STRIP, gitMetaSha256, gitDirProblem, workTreeContentSha256, diffSha256, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, statusSha256 } = require('./xprov-snapshot.cjs');
 const { readScanRecord } = require('./xprov-scan-records.cjs');
+const EGRESS = require('./xprov-egress-audit.cjs'); // audit F-001: the always-on egress line before every spawn
 
 const NO_LOG_FLAG = 'no-log';
 const FLAGS = Object.freeze({
@@ -790,6 +791,20 @@ function writeReviewedRecord(ctx, runDir) {
   fs.writeFileSync(path.join(runDir, REVIEWED_FILE), `${JSON.stringify({ commit: commit.trim(), base: base.trim(), diff_sha256: diffSha }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
 }
 
+/** Audit before effect (audit F-001): one always-on chained line per runner spawn, independent of --no-log and the opt-in log.
+ * → null when the line is written, else the sentence that refuses the spawn. Holds hashes and names, never contents. */
+function recordEgress(ctx) {
+  try {
+    EGRESS.appendEgress({
+      repo: ctx.root, gate: ctx.gate, mode: ctx.mode, phase: ctx.phase, round: ctx.round, lane: ctx.lane, commit: ctx.scan.commit || null,
+      input_sha256: sha256(fs.readFileSync(ctx.plan)), diff_sha256: ctx.mode === 'inspect' ? ctx.diffSha || null : null, model_pinned: X.MODEL_PINNED,
+    });
+    return null;
+  } catch (e) {
+    return `the egress audit line could not be written (${(e && e.reason) || 'error'}: ${String((e && e.message) || e).slice(0, 300)})`;
+  }
+}
+
 /** Pre-spawn run home + late input re-hash, spawn, post-run judgement; the
  * baseline temp dir and the run home are always removed. */
 function runWithBaseline(ctx, artifactsDir, argv, notes) {
@@ -831,6 +846,11 @@ function runWithBaseline(ctx, artifactsDir, argv, notes) {
     if (homeIssue) {
       process.stderr.write(`xprov run: ${homeIssue}\n`);
       return o.failWith(X.REASONS.preflight_failed, homeIssue, null, false);
+    }
+    const egress = recordEgress(ctx);
+    if (egress) {
+      process.stderr.write(`xprov run: ${egress}; refusing to spawn\n`);
+      return o.failWith(X.REASONS.preflight_failed, egress, null, false);
     }
     const run = spawnRunner(argv, ctx, artifactsDir, runHome);
     const rawManifest = runHomeManifest(runHome);
