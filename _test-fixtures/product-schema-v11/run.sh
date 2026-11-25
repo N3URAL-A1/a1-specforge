@@ -852,6 +852,17 @@ else
   assert_true "vision-touch-index-json-vision-updated-bumped" "false"
 fi
 
+# A CRLF VISION.md is updated in place: still CRLF only, everything after the frontmatter byte-identical
+# (follow-up F-010 of 2026-11-25; red before the fix: exit 1, "does not start with a '---' frontmatter block").
+mk_workdir WORK13C "a1-product-schema-v11-vision-touch-crlf"
+cp -R "$WORK13/." "$WORK13C/"
+PDIR13C="$WORK13C/docs/product"
+node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/\r?\n/g,"\r\n").replace(/^updated: [0-9-]+/m,"updated: 2020-01-01"))' "$PDIR13C/VISION.md"
+CRLF_REST_BEFORE="$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(require("crypto").createHash("sha256").update(t.slice(t.indexOf("\r\n---",4))).digest("hex"))' "$PDIR13C/VISION.md")"
+OUT="$(node "$TOOLS" product vision-touch --dir "$PDIR13C" 2>&1)"
+assert_rc "vision-touch-crlf-exit-0" 0 "$?" "$OUT"
+assert_true "vision-touch-crlf-kept-and-body-unchanged" "$(node -e 'const [f,h,d]=process.argv.slice(1);const t=require("fs").readFileSync(f,"utf8");const rest=t.slice(t.indexOf("\r\n---",4));process.stdout.write(!/(^|[^\r])\n/.test(t)&&t.includes("\r\nupdated: "+d+"\r\n")&&require("crypto").createHash("sha256").update(rest).digest("hex")===h?"true":"false")' "$PDIR13C/VISION.md" "$CRLF_REST_BEFORE" "$TODAY")"
+
 # vision-touch against a project with no VISION.md must refuse, not create one.
 mk_workdir WORK13B "a1-product-schema-v11-vision-touch-missing"
 PDIR13B="$WORK13B/docs/product"

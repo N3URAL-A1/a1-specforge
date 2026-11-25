@@ -159,7 +159,10 @@ function cmdProductVisionTouch(args) {
     failWithLock(lockPath, `product vision-touch: ${roadmapFile} not found`);
   }
 
-  const visionContentBefore = fs.readFileSync(visionFile, 'utf8');
+  // A pure CRLF file is edited as LF and written back as CRLF, so FR-004's byte contract holds for it too (follow-up F-010).
+  const visionRaw = fs.readFileSync(visionFile, 'utf8');
+  const visionCrlf = visionRaw.includes('\r\n') && !/(^|[^\r])\n/.test(visionRaw);
+  const visionContentBefore = visionRaw.replace(/\r\n/g, '\n');
   const { fm: visionFm } = parseNestedFrontmatter(visionContentBefore);
   if (typeof visionFm.updated !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(visionFm.updated)) {
     failWithLock(lockPath, `product vision-touch: ${visionFile} has no valid 'updated: YYYY-MM-DD' frontmatter line to bump — run \`product validate\` to diagnose the file first`);
@@ -195,7 +198,8 @@ function cmdProductVisionTouch(args) {
     failWithLock(lockPath, `product vision-touch: ${visionFile} frontmatter has no 'updated:' line to replace`);
   }
   const fmBlockAfter = fmBlockBefore.replace(updatedLineRe, `updated: ${today}`);
-  const visionContentAfter = `${fmBlockAfter}${restAfterFm}`;
+  const visionContentAfterLf = `${fmBlockAfter}${restAfterFm}`;
+  const visionContentAfter = visionCrlf ? visionContentAfterLf.replace(/\n/g, '\r\n') : visionContentAfterLf;
 
   const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
   const { fm: roadmapFm } = parseNestedFrontmatter(roadmapContent);
