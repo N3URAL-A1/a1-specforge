@@ -4,8 +4,9 @@
 // Scope: the single file in OPTIN_FILES. The `*.last-run.json` files all have a reader and stay always-on; the self-repair trail
 // is written to the observation line (`recovery`), never to this log. `bin/check-optin-readers.cjs` lists the readers of a
 // candidate file name: a line that names it is a reader unless a MENTIONS_ALLOWED entry matches that very line.
-// Limit: that scan is literal. A reader that reaches the file through a constant (a path built from LOG_FILE) is not seen;
-// the writer constants are pinned by their own entries below instead.
+// Limit: that scan is literal and line-based. Not seen: a reader through a constant (a path built from LOG_FILE), a name from split or
+// concatenated literals, a file with an extension outside the scanned set (.py, .ts, .txt), a non-executable file without an extension,
+// and logic in this module itself (a redefined entry(): the checker executes it). The writer constants are pinned by their own entries below.
 
 const OPTIN_ENV = 'A1_KEEP_REVIEW_LOGS';
 
@@ -24,7 +25,8 @@ const entry = (file, contains, reason) => Object.freeze({ file, contains, reason
  * characters, unique in that file, measured on the final text); a mention passes only when its file matches and the line
  * holds it. No whole-file entries. `bin/check-optin-readers.cjs` enforces this: a shorter `contains` is a contract violation,
  * an entry covers exactly one line (a second line with the same text is a reader), an entry that covers no line is stale.
- * Not covered (literal scan): a reader through a constant such as LOG_FILE.
+ * Not covered (literal scan): a reader through a constant such as LOG_FILE, split literals, other extensions, logic in this module.
+ * An entry whose `contains` names no OPTIN_FILES entry is a contract violation (it could never cover a line).
  * @type {ReadonlyArray<{file: string, contains: string, reason: string}>}
  */
 const MENTIONS_ALLOWED = Object.freeze([
