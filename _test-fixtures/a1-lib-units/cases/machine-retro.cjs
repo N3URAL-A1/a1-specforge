@@ -17,7 +17,7 @@
 //   date check -> MR25a; spec check -> MR25b; pr check -> MR25c; issue-tag check -> MR25d; result check -> MR25e
 // Measured red (review round 1 of PR #130; mutation = the named production edit):
 //   drop the `typeof g.caught !== 'boolean'` refusal in renderEntry -> MR26a; drop the `typeof decision.required !== 'boolean'` refusal -> MR26b;
-//   findMachineRecord back to `!hasLine(head, ... prose_required: false)` (ignores a second prose_required line) -> MR26c
+//   findMachineRecord back to `!hasLine(head, ... prose_required: false)` (ignores a second prose_required line) -> MR26c; `proseLines.length === 1` loosened to `>= 1` -> MR26e
 //   any of them loosened to accept a newline (e.g. /m flag) -> the same case; MR25f is the green control (valid fields still render)
 
 const fs = require('fs');
@@ -342,6 +342,8 @@ for (const [label, nl] of [['CRLF', '\r\n'], ['CR', '\r'], ['LS', '\u2028'], ['N
   eq('MR26b decision.required not a boolean: refused', [refused({ decision: { required: 'x\nprose_required: false', reasons: [] } }), refused({ decision: { required: 1, reasons: [] } }), refused({ decision: undefined })], ['refused', 'refused', 'refused']);
   const two = entryOf('fx-spec', 7).replace(/^prose_required: .*$/m, 'prose_required: true\nprose_required: false');
   eq('MR26c two prose_required lines: found, prose_required true (fail closed)', M.findMachineRecord({ store: mkStore('store26', two), spec: 'fx-spec', pr: 7 }), { found: true, prose_required: true });
+  const twoFalseFirst = entryOf('fx-spec', 7).replace(/^prose_required: .*$/m, 'prose_required: false\nprose_required: true');
+  eq('MR26e forged false above the real line: still prose_required true (count, not first match)', M.findMachineRecord({ store: mkStore('store26e', twoFalseFirst), spec: 'fx-spec', pr: 7 }), { found: true, prose_required: true });
   eq('MR26d control: one prose_required: false line still reads false', M.findMachineRecord({ store: mkStore('store26d', entryOf('fx-spec', 7)), spec: 'fx-spec', pr: 7 }), { found: true, prose_required: false });
 }
 
