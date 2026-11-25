@@ -29,20 +29,22 @@ const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 const TAIL_BYTES = 65536; // one line is far below this; the tail holds the last complete line
 const SHA_RE = /^[0-9a-f]{64}$/;
+const GIT_ID_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/; // sha1 or sha256 object id
 const LINE_KEYS = Object.freeze(['ts', 'repo', 'gate', 'mode', 'phase', 'round', 'lane', 'commit', 'tree', 'content_sha256', 'input_sha256', 'feedback_sha256', 'diff_sha256', 'model_pinned', 'prev']);
 
 const egressPath = () => path.join(X.xprovHome(), EGRESS_FILE);
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const nullableSha = (v) => v === null || (typeof v === 'string' && SHA_RE.test(v));
 const nullableText = (v) => v === null || typeof v === 'string';
+const nullableGitId = (v) => v === null || (typeof v === 'string' && GIT_ID_RE.test(v));
 
 function validLine(o) {
   if (!C.isPlainObject(o)) return false;
   const keys = Object.keys(o);
   if (keys.length !== LINE_KEYS.length || !LINE_KEYS.every((k) => keys.includes(k))) return false;
   return typeof o.ts === 'string' && typeof o.repo === 'string' && typeof o.gate === 'string' && typeof o.mode === 'string'
-    && typeof o.phase === 'string' && Number.isInteger(o.round) && nullableText(o.lane) && nullableText(o.commit)
-    && nullableText(o.tree) && nullableSha(o.content_sha256) && nullableSha(o.feedback_sha256)
+    && typeof o.phase === 'string' && Number.isInteger(o.round) && nullableText(o.lane) && nullableGitId(o.commit)
+    && nullableGitId(o.tree) && nullableSha(o.content_sha256) && nullableSha(o.feedback_sha256)
     && typeof o.input_sha256 === 'string' && SHA_RE.test(o.input_sha256) && nullableSha(o.diff_sha256)
     && typeof o.model_pinned === 'string' && nullableSha(o.prev);
 }
