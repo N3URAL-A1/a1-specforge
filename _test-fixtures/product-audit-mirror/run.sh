@@ -474,3 +474,4 @@ else
 fi
 
 echo "product-audit-mirror fixtures: $pass passed, $fail failed"
+[[ "$fail" -eq 0 ]]
