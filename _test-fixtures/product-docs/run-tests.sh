@@ -963,6 +963,11 @@ RC=$?
 assert_rc "f009-stray-line-refused" 1 "$RC" "$OUT"
 assert_true "f009-stray-line-named" "$(echo "$OUT" | grep -q 'footer note kept by hand' && echo true || echo false)"
 assert_true "f009-roadmap-unchanged" "$([[ "$(hash_file "$STRAY_PDIR/ROADMAP.md")" == "$STRAY_HASH" ]] && echo true || echo false)"
+assert_true "f009-lock-released-after-refusal" "$([[ ! -e "$STRAY_PDIR/.product-stage.lock.json.lock" ]] && echo true || echo false)"
+# Every locked writer goes through the same check: add-milestone refuses too and leaves the file as it was.
+OUT="$(node "$TOOLS" product add-milestone --id m9-stray --title "Stray" --dir "$STRAY_PDIR" 2>&1)"
+assert_rc "f009-add-milestone-refused" 1 "$?" "$OUT"
+assert_true "f009-add-milestone-roadmap-unchanged" "$([[ "$(hash_file "$STRAY_PDIR/ROADMAP.md")" == "$STRAY_HASH" ]] && [[ ! -e "$STRAY_PDIR/.product-stage.lock.json.lock" ]] && echo true || echo false)"
 # Moving the line above the first entry (intro) lets the next write through and keeps it.
 node -e 'const fs=require("fs");const f=process.argv[1];let t=fs.readFileSync(f,"utf8").replace("\nfooter note kept by hand\n","");fs.writeFileSync(f,t.replace(/^## Changelog\n\n/m,"## Changelog\n\nfooter note kept by hand\n\n"))' "$STRAY_PDIR/ROADMAP.md"
 OUT="$(node "$TOOLS" product changelog --entry "stray check" --why "F-009" --dir "$STRAY_PDIR" 2>&1)"

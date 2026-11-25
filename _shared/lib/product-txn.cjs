@@ -15,8 +15,9 @@ const CHANGELOG_ROTATION_LIMIT = 100;
 /** Append a changelog line to ROADMAP.md body's `## Changelog` section
  * in-memory (pure — caller is responsible for persisting via the same
  * atomic write set as every other product mutation). Returns
- * { body, archiveAppend } where archiveAppend is a string to append to
- * CHANGELOG-archive.md (or null if no rotation happened this call). */
+ * { body, archiveAppend, stray } where archiveAppend is a string to append to
+ * CHANGELOG-archive.md (or null if no rotation happened this call) and stray is
+ * the first non-entry line below the first entry (body unchanged), else null. */
 function appendChangelogEntry(body, what, why) {
   const today = nowIso().slice(0, 10);
   const line = `- **${today}** — ${what} — ${why}`;
@@ -117,11 +118,13 @@ function derivedWrites(dir, derived, lockPath) {
  * roadmap frontmatter + body (`lockPath` = the lock the caller holds). Handles the >100-entry archive rotation
  * (FR-010) by adding a 4th write when rotation occurs. Returns
  * { writes, roadmapContent } for the caller to push onto its own writes[]
- * (e.g. feature.md, reservations.json) before calling writeAllOrNothing. */
+ * (e.g. feature.md, reservations.json) before calling writeAllOrNothing.
+ * Refuses (releases lockPath, exit 1) when the Changelog section has a non-entry line
+ * below the first entry, since the rebuild would drop it. */
 function buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, what, why, lockPath) {
   const { body: bodyWithEntry, archiveAppend, stray } = appendChangelogEntry(roadmapBody, what, why);
   if (stray !== null) {
-    const msg = `product: ROADMAP.md "## Changelog" has a line that is not an entry after the first entry (${JSON.stringify(stray.slice(0, 120))}); ` +
+    const msg = `product: ROADMAP.md "## Changelog" has a non-entry line below the first entry (${JSON.stringify(stray.slice(0, 120))}); ` +
       'the rewrite would drop it. Move it above the first entry or remove it, then run the command again.';
     if (lockPath) failWithLock(lockPath, msg);
     else fail(msg);
