@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-24T21:37:22.035Z",
+  "generated": "2026-11-25T07:40:54.660Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -446,9 +446,23 @@
         "major": 0,
         "minor": 8
       },
-      "open": 6,
-      "fixed": 2,
+      "open": 1,
+      "fixed": 7,
       "last_validated": "2026-11-24"
+    },
+    {
+      "path": "docs/product/audits/2026-11-25-quality.md",
+      "date": "2026-11-25",
+      "focus": "quality",
+      "verdict": "review follow-ups of the 2026-11-24 quality-audit fixes (PR #123, #124)",
+      "counts": {
+        "blocker": 0,
+        "major": 0,
+        "minor": 2
+      },
+      "open": 2,
+      "fixed": 0,
+      "last_validated": "2026-11-25"
     }
   ]
 }
