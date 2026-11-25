@@ -7,6 +7,7 @@
 #   OL6  .last-run.json has readers (04b, 01-load)                    OL7  self-repair with the log off: the observation holds `recovery`
 #   OL8  line-exact allowlist (an extra line in help-xprov.cjs reads) OL9  buildObservation rejects an unknown recovery action
 #   OL12-OL16 allowlist contract: duplicate line, widened scan, stale entry, optin-logs.cjs itself, contains < 20
+#   OL20-OL29 canonical symlink walk, root containment, unreadable paths, dead entry, relative --root, broken links, bad --root (red-making changes at the OL20 block)
 #   OL10 compactRecovery is total, bounded and leaks nothing          OL11 compactRecovery keeps `fallback`
 # Helpers are copied from parts 06 and 29 (a part must run alone in its shard).
 
@@ -79,19 +80,23 @@ assert_json "OL12 exactly one reader, in xprov-run.cjs" "$(cat "$TMP40/rd12.json
 cp_tree40 "$TMP40/plant12b"; printf '// a1 writes PLAN-REVIEW-LOG.md itself\n' >> "$TMP40/plant12b/_shared/lib/xprov-run.cjs"
 run40 "$TMP40/plant12b" rd12b; assert_rc "OL12b an exact duplicate of an allowed line is a reader" 1 "$rc40"
 assert_json "OL12b the reader names the line that took the entry (duplicate_of)" "$(cat "$TMP40/rd12b.json")" "typeof j.readers[0].duplicate_of + '|' + (j.readers[0].duplicate_of < j.readers[0].line)" "number|true"
-# OL13: a reader is found in every scanned root and extension (SCAN_ROOTS x SCAN_EXTS), through symlinks, and in an executable without extension
+# OL13: a reader is found in every scanned root and extension (SCAN_ROOTS x SCAN_EXTS), through in-root symlinks, and in an executable without extension
+# (bug 2026-11-25-optin-checker-symlinks-4: the followed-symlink targets are inside the root; an outside link is unscanned, see OL22)
 cp_tree40 "$TMP40/plant13"; P13="$TMP40/plant13"
-mkdir -p "$P13/skills/a1-plan/scripts" "$P13/_extras/x" "$P13/.github/workflows" "$P13/packs" "$TMP40/outside13" "$P13/_shared/vendor" "$P13/_shared/node_modules"
+mkdir -p "$P13/skills/a1-plan/scripts" "$P13/_extras/x" "$P13/_extras/linktarget" "$P13/.github/workflows" "$P13/packs" "$TMP40/outside13" "$P13/_shared/vendor" "$P13/_shared/node_modules"
 LINE13='cat PLAN-REVIEW-LOG.md'
-PLANTED13="_shared/a1-tools.cjs bin/run-suites.sh hooks/xprov-consent-hook.cjs hooks/hooks.json skills/a1-plan/scripts/plant.sh _shared/lib/plant.js _shared/lib/plant.mjs packs/README.md _extras/x/plant.yml .github/workflows/plant.yaml bin/plant.toml bin/plant.html bin/plant.plist bin/plant-exec skills/linkdir/plant.md agents/linkfile.md"
-for f13 in _shared/a1-tools.cjs bin/run-suites.sh hooks/xprov-consent-hook.cjs hooks/hooks.json skills/a1-plan/scripts/plant.sh _shared/lib/plant.js _shared/lib/plant.mjs packs/README.md _extras/x/plant.yml .github/workflows/plant.yaml bin/plant.toml bin/plant.html bin/plant.plist bin/plant-exec; do printf '%s\n' "$LINE13" >> "$P13/$f13"; done
+PLANTED13="_shared/a1-tools.cjs bin/run-suites.sh hooks/xprov-consent-hook.cjs hooks/hooks.json skills/a1-plan/scripts/plant.sh _shared/lib/plant.js _shared/lib/plant.mjs packs/README.md _extras/x/plant.yml .github/workflows/plant.yaml bin/plant.toml bin/plant.html bin/plant.plist bin/plant-exec _extras/linktarget/plant.md packs/real13.md"
+for f13 in _shared/a1-tools.cjs bin/run-suites.sh hooks/xprov-consent-hook.cjs hooks/hooks.json skills/a1-plan/scripts/plant.sh _shared/lib/plant.js _shared/lib/plant.mjs packs/README.md _extras/x/plant.yml .github/workflows/plant.yaml bin/plant.toml bin/plant.html bin/plant.plist bin/plant-exec _extras/linktarget/plant.md packs/real13.md; do printf '%s\n' "$LINE13" >> "$P13/$f13"; done
 chmod +x "$P13/bin/plant-exec"
-printf '%s\n' "$LINE13" > "$TMP40/outside13/plant.md"; ln -s "$TMP40/outside13" "$P13/skills/linkdir"; ln -s "$TMP40/outside13/plant.md" "$P13/agents/linkfile.md"; ln -s .. "$P13/skills/loop13"
+printf '%s\n' "$LINE13" > "$TMP40/outside13/plant.md"; ln -s ../_extras/linktarget "$P13/skills/linkdir"; ln -s ../packs/real13.md "$P13/agents/linkfile.md"; ln -s .. "$P13/skills/loop13"
+ln -s "$TMP40/outside13" "$P13/skills/outlink13"; ln -s "$TMP40/outside13/plant.md" "$P13/agents/outfile13.md"
 printf '%s\n' "$LINE13" > "$P13/_shared/vendor/skip.md"; printf '%s\n' "$LINE13" > "$P13/_shared/node_modules/skip.md"; printf '%s\n' "$LINE13" > "$P13/bin/plain.txt"
 run40 "$P13" rd13; assert_rc "OL13 planted readers in every root and extension" 1 "$rc40"
 for f13 in $PLANTED13; do assert_json "OL13 $f13 is reported" "$(cat "$TMP40/rd13.json")" "j.readers.some((r) => r.file === '$f13')" "true"; done
-assert_json "OL13 a symlink loop is cut at the first repeat (no path walks loop13 twice)" "$(cat "$TMP40/rd13.json")" "j.readers.some((r) => /loop13.*loop13/.test(r.file))" "false"
-assert_json "OL13 vendor/, node_modules/ and a .txt file are not scanned" "$(cat "$TMP40/rd13.json")" "j.readers.some((r) => ['_shared/vendor/skip.md', '_shared/node_modules/skip.md', 'bin/plain.txt'].includes(r.file))" "false"
+assert_json "OL13 exactly the 16 planted readers (every real file once, under its canonical path)" "$(cat "$TMP40/rd13.json")" "j.readers.length + '|' + j.readers.map((r) => r.file).sort().join(',') === '16|' + '$PLANTED13'.split(' ').sort().join(',')" "true"
+assert_json "OL13 no reader path goes through the loop link, a followed link or an outside link" "$(cat "$TMP40/rd13.json")" "j.readers.some((r) => /loop13|linkdir|linkfile|outlink13|outfile13|outside13/.test(r.file))" "false"
+assert_json "OL13 no reader under vendor/ or node_modules/ and none from the .txt file" "$(cat "$TMP40/rd13.json")" "j.readers.some((r) => /\/vendor\/|node_modules\/|plain\.txt/.test(r.file))" "false"
+assert_json "OL13 the two outside links are unscanned ('outside root'), nothing else is" "$(cat "$TMP40/rd13.json")" "JSON.stringify(j.unscanned.map((u) => u.file + ':' + u.reason).sort())" '["agents/outfile13.md:outside root","skills/outlink13:outside root"]'
 # OL14: an entry that matches no line is stale
 cp_tree40 "$TMP40/plant14"; node -e '
   const fs = require("fs"); const f = process.argv[1];
@@ -183,6 +188,77 @@ done
 cp_tree40 "$TMP40/plant19b"; rm -f "$TMP40/plant19b/_shared/lib/optin-logs.cjs"
 run40 "$TMP40/plant19b" rd19b; assert_json "OL19 a root without optin-logs.cjs uses the fallback" "$(cat "$TMP40/rd19b.json")" "j.allowlist" "fallback"
 assert_json "OL19 the real tree uses the root allowlist" "$(cat "$TMP40/rd.json")" "j.allowlist" "root"
+# OL20-OL29: canonical symlink walk, root containment, unreadable paths, dead entries, broken links, bad --root (bug 2026-11-25-optin-checker-symlinks-4).
+# Each case names the one production change that turns it red (CONVENTIONS RED proof); every one was run on a git archive copy.
+#   OL20 (parent link): dropping the `SCAN_ROOTS.includes(canon.split('/')[0])` test in visit(): the link to the root walks docs/ (a reader
+#        outside the scanned roots, under skills/up/). OL13 loop13 is the same link in the big plant.
+#   OL21 (harmless alias): the global set of visited real paths (`ctx.visited`) replaced by an ancestor chain: the aliased lib is read
+#        again under bin/libalias/ (22 false readers on the clean tree; OL13 also goes red: it counts every real file once).
+#   OL22 (link out of the root): dropping the `isOutside(canon)` branch (the link is no longer listed; with the SCAN_ROOTS test also gone the
+#        foreign tree is walked and its reader is reported); dropping `+ result.unscanned.length` from the exit-code sum in finish() gives rc 0
+#        although the link was never scanned (decision D1).
+#   OL23 (unreadable dir / file): removing the try/catch around readdirSync (23a) or readFileSync (23b): stack on stderr, rc 1, no JSON.
+#   OL24 (dead entry): removing the `names no OPTIN_FILES entry` test in contractViolations: rc 0, no violation.
+#   OL25 (relative --root): dropping path.resolve(--root): exit 2 (module not found).
+#   OL26 (dangling links, nested and as a top-level scan root): classifying every realpath failure as 'unreadable' (the reason is no
+#        longer 'broken symlink').
+#   OL27 (--root is a file): dropping the `isDirectory()` check in listFiles(): rc 1 (every scan root listed unreadable) instead of exit 2.
+#   OL28 (a file under a read-only dir): the old catch labelling every realpath failure 'broken symlink' (EACCES is 'unreadable').
+#   OL29 (root without access): the per-scan-root lstat catch skipping every error (`continue` without the ENOENT test): rc 0, nothing scanned.
+# OL20: a link to the parent directory: the tree is read once, under its own paths
+cp_tree40 "$TMP40/plant20"; mkdir "$TMP40/plant20/docs"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/plant20/docs/notes.md"; printf 'Read PLAN-REVIEW-LOG.md for the history.\n' >> "$TMP40/plant20/agents/$(basename "$af40")"; ln -s .. "$TMP40/plant20/skills/up"
+run40 "$TMP40/plant20" rd20; assert_rc "OL20 a parent link plus one real reader" 1 "$rc40"
+assert_json "OL20 exactly one reader, in agents/ (docs/ is no scanned root), none under skills/up/" "$(cat "$TMP40/rd20.json")" "j.readers.length + '|' + j.readers.some((r) => r.file.startsWith('skills/up/'))" "1|false"
+# OL21: a harmless alias of a scanned directory in a clean tree: no reader, rc 0
+cp_tree40 "$TMP40/plant21"; ln -s ../_shared/lib "$TMP40/plant21/bin/libalias"
+run40 "$TMP40/plant21" rd21; assert_rc "OL21 an alias of _shared/lib in a clean tree" 0 "$rc40"
+assert_json "OL21 no reader, nothing unscanned" "$(cat "$TMP40/rd21.json")" "j.readers.length + '|' + j.unscanned.length" "0|0"
+# OL22: a link out of the root: not walked, listed as unscanned, rc 1 (D1) although no reader exists
+cp_tree40 "$TMP40/plant22"; mkdir -p "$TMP40/outside22/.hidden"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/outside22/plant.md"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/outside22/.hidden/h.md"; ln -s "$TMP40/outside22" "$TMP40/plant22/skills/home"
+run40 "$TMP40/plant22" rd22; assert_rc "OL22 a link out of the root is unscanned and fails the check (D1)" 1 "$rc40"
+assert_json "OL22 unscanned is the link with reason 'outside root'" "$(cat "$TMP40/rd22.json")" "JSON.stringify(j.unscanned)" '[{"file":"skills/home","reason":"outside root"}]'
+assert_json "OL22 no reader under or through the link" "$(cat "$TMP40/rd22.json")" "j.readers.length" "0"
+# OL23: an unreadable directory / file: JSON on stdout, unscanned 'unreadable', no stack (skipped as uid 0: root reads everything)
+if [[ "$(id -u)" == 0 ]]; then echo "SKIP  OL23 unreadable paths (running as uid 0)"; else
+  cp_tree40 "$TMP40/plant23a"; mkdir "$TMP40/plant23a/agents/locked"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/plant23a/agents/locked/x.md"; chmod 000 "$TMP40/plant23a/agents/locked"
+  node "$CHECK40" --name "$OLNAME40" --root "$TMP40/plant23a" > "$TMP40/rd23a.json" 2>"$TMP40/rd23a.err"; rc40=$?; chmod 755 "$TMP40/plant23a/agents/locked"
+  assert_rc "OL23a an unreadable directory fails the check with JSON, not a crash" 1 "$rc40"
+  assert_json "OL23a unscanned names the directory as unreadable" "$(cat "$TMP40/rd23a.json")" "JSON.stringify(j.unscanned)" '[{"file":"agents/locked","reason":"unreadable"}]'
+  assert_eq "OL23a no stack on stderr" "$(grep -c 'EACCES\|    at ' "$TMP40/rd23a.err")" "0"
+  cp_tree40 "$TMP40/plant23b"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/plant23b/bin/locked.sh"; chmod 000 "$TMP40/plant23b/bin/locked.sh"
+  node "$CHECK40" --name "$OLNAME40" --root "$TMP40/plant23b" > "$TMP40/rd23b.json" 2>"$TMP40/rd23b.err"; rc40=$?; chmod 644 "$TMP40/plant23b/bin/locked.sh"
+  assert_rc "OL23b an unreadable file fails the check with JSON, not a crash" 1 "$rc40"
+  assert_json "OL23b unscanned names the file as unreadable" "$(cat "$TMP40/rd23b.json")" "JSON.stringify(j.unscanned)" '[{"file":"bin/locked.sh","reason":"unreadable"}]'
+  assert_eq "OL23b no stack on stderr" "$(grep -c 'EACCES\|    at ' "$TMP40/rd23b.err")" "0"
+fi
+# OL24: an entry whose contains names no OPTIN_FILES entry (a misspelling) is a contract violation, not a silently dead entry
+cp_tree40 "$TMP40/plant24"; for f24 in _shared/lib/optin-logs.cjs _shared/lib/xprov-run.cjs; do node -e '
+  const fs = require("fs"); const f = process.argv[1];
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").split("a1 writes PLAN-REVIEW-LOG.md itself").join("a1 writes PLAN-REVEIW-LOG.md itself"));
+' "$TMP40/plant24/$f24"; done
+run40 "$TMP40/plant24" rd24; assert_rc "OL24 a dead allowlist entry fails the check" 1 "$rc40"
+assert_json "OL24 one contract violation naming the entry" "$(cat "$TMP40/rd24.json")" "j.contract_violations.length + '|' + j.contract_violations[0].reason" "1|contains names no OPTIN_FILES entry"
+# OL25: a relative --root works (resolved against the cwd)
+cp_tree40 "$TMP40/plant25"; ( cd "$TMP40" && node "$CHECK40" --name "$OLNAME40" --root plant25 > "$TMP40/rd25.json" 2>/dev/null ); rc40=$?
+assert_rc "OL25 a relative --root" 0 "$rc40"
+# OL26: a dangling link inside a scanned root and a dangling top-level scan root: both unscanned 'broken symlink'
+cp_tree40 "$TMP40/plant26"; ln -s nowhere26.md "$TMP40/plant26/agents/dang.md"; rm -rf "$TMP40/plant26/hooks"; ln -s nowhere26 "$TMP40/plant26/hooks"
+run40 "$TMP40/plant26" rd26; assert_rc "OL26 dangling links fail the check (D1)" 1 "$rc40"
+assert_json "OL26 unscanned: exactly the two links, 'broken symlink'" "$(cat "$TMP40/rd26.json")" "JSON.stringify(j.unscanned.map((u) => u.file + ':' + u.reason).sort())" '["agents/dang.md:broken symlink","hooks:broken symlink"]'
+# OL27: --root pointing to a file is a usage error (exit 2), never a clean scan of nothing
+printf 'x\n' > "$TMP40/rootfile27"; node "$CHECK40" --name "$OLNAME40" --root "$TMP40/rootfile27" >/dev/null 2>&1; assert_rc "OL27 --root is a file" 2 "$?"
+if [[ "$(id -u)" == 0 ]]; then echo "SKIP  OL28/OL29 access cases (running as uid 0)"; else
+  # OL28: a path that cannot be resolved because the directory has no x bit is 'unreadable', not a broken link
+  cp_tree40 "$TMP40/plant28"; mkdir "$TMP40/plant28/agents/ro"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/plant28/agents/ro/x.md"; chmod 444 "$TMP40/plant28/agents/ro"
+  run40 "$TMP40/plant28" rd28; chmod 755 "$TMP40/plant28/agents/ro"
+  assert_rc "OL28 a file under a read-only directory fails the check" 1 "$rc40"
+  assert_json "OL28 unscanned: that file, 'unreadable'" "$(cat "$TMP40/rd28.json")" "JSON.stringify(j.unscanned)" '[{"file":"agents/ro/x.md","reason":"unreadable"}]'
+  # OL29: a root without access (mode 000): every scan root is unscanned 'unreadable', rc 1
+  cp_tree40 "$TMP40/plant29"; chmod 000 "$TMP40/plant29"
+  run40 "$TMP40/plant29" rd29; chmod 755 "$TMP40/plant29"
+  assert_rc "OL29 a root without access fails the check" 1 "$rc40"
+  assert_json "OL29 every present scan root is unscanned 'unreadable'" "$(cat "$TMP40/rd29.json")" "j.unscanned.length > 0 && j.unscanned.every((u) => u.reason === 'unreadable') && j.readers.length === 0" "true"
+fi
 # OL4b: the real tree reports no stale entry and no violation
 assert_json "OL4 real tree: stale and contract_violations are empty" "$(cat "$TMP40/rd.json")" "j.stale.length + '|' + j.contract_violations.length" "0|0"
 
