@@ -852,6 +852,26 @@ else
   assert_true "vision-touch-index-json-vision-updated-bumped" "false"
 fi
 
+# A VISION.md with CRLF or mixed line endings is updated in place: every byte except the updated: value stays as it
+# was, line endings included (follow-up F-010 of 2026-11-25). Red on main: the CRLF case exits 1 ("does not start with
+# a '---' frontmatter block"). A fix that normalizes to LF and restores CRLF only for pure CRLF files keeps the CRLF case
+# green but fails the mixed case (body CRLF bytes lost, review of PR #137); mixedfm (CRLF frontmatter, LF body) was
+# refused on main and guards the bounding.
+vt_masked_hash() { node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(require("crypto").createHash("sha256").update(t.replace(/^updated:[^\r\n]*/m,"updated: X")).digest("hex"))' "$1"; }
+for vt_case in crlf mixed mixedfm; do
+  mk_workdir WORK13C "a1-product-schema-v11-vision-touch-$vt_case"
+  cp -R "$WORK13/." "$WORK13C/"
+  PDIR13C="$WORK13C/docs/product"
+  node -e 'const fs=require("fs");const [f,m]=process.argv.slice(1);let t=fs.readFileSync(f,"utf8").replace(/^updated: [0-9-]+/m,"updated: 2020-01-01");
+    const e=t.indexOf("\n---",4)+4;
+    if(m==="crlf")t=t.replace(/\r?\n/g,"\r\n");else if(m==="mixed")t=t.slice(0,e)+t.slice(e).replace(/\r?\n/g,"\r\n");else t=t.slice(0,e).replace(/\r?\n/g,"\r\n")+t.slice(e);
+    fs.writeFileSync(f,t)' "$PDIR13C/VISION.md" "$vt_case"
+  VT_BEFORE="$(vt_masked_hash "$PDIR13C/VISION.md")"
+  OUT="$(node "$TOOLS" product vision-touch --dir "$PDIR13C" 2>&1)"
+  assert_rc "vision-touch-$vt_case-exit-0" 0 "$?" "$OUT"
+  assert_true "vision-touch-$vt_case-only-updated-changed" "$([[ "$(vt_masked_hash "$PDIR13C/VISION.md")" == "$VT_BEFORE" ]] && grep -q "^updated: ${TODAY}" "$PDIR13C/VISION.md" && echo true || echo false)"
+done
+
 # vision-touch against a project with no VISION.md must refuse, not create one.
 mk_workdir WORK13B "a1-product-schema-v11-vision-touch-missing"
 PDIR13B="$WORK13B/docs/product"
