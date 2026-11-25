@@ -9,7 +9,7 @@
 // (relative to realpath(root)), so an alias or a link to a parent never rescans a tree. A link whose target lies outside the root is
 // not walked and goes to `unscanned` ('outside root'); a target inside the root but outside the scanned roots is not walked;
 // the skip lists (_shared/vendor, node_modules) apply to the canonical path. A link that cannot be resolved (ENOENT, ELOOP, ENOTDIR: 'broken symlink') and a
-// path that cannot be resolved or read for another reason such as EACCES ('unreadable') are listed in `unscanned` too. --root is resolved against the cwd and must be a directory (else exit 2).
+// path that cannot be resolved or read for another reason such as EACCES ('unreadable') are listed in `unscanned` too. --root is resolved against the cwd and must be a directory holding at least one of the scan roots (else exit 2); a scan root that exists but cannot be read counts as present and goes to `unscanned`, and so does any entry with a scan root's name (a plain file named `bin` counts as present and scans nothing).
 // The allowlist contract is enforced here, not only documented:
 //   - every `contains` is at least 20 characters, else `contract_violations` (checked before the scan);
 //   - an entry whose `contains` names no OPTIN_FILES entry can never cover a line of a candidate: `contract_violations` (checked before the scan);
@@ -116,13 +116,16 @@ function listFiles(root) {
   try { realRoot = fs.realpathSync(root); } catch (_e) { return usage('--root cannot be resolved'); }
   try { if (!fs.statSync(realRoot).isDirectory()) return usage('--root is not a directory'); } catch (_e) { return usage('--root is not a directory'); }
   const ctx = { realRoot, visited: new Set(), files: [], unscanned: [] };
+  let present = 0; // a scan root that exists, readable or not
   for (const sub of SCAN_ROOTS) {
     try { fs.lstatSync(path.join(realRoot, sub)); } catch (e) {
-      if (e.code !== 'ENOENT') ctx.unscanned.push({ file: sub, reason: 'unreadable' }); // absent (ENOENT): nothing to scan
+      if (e.code !== 'ENOENT') { present += 1; ctx.unscanned.push({ file: sub, reason: 'unreadable' }); } // absent (ENOENT): nothing to scan
       continue;
     }
+    present += 1;
     visit(ctx, '', sub);
   }
+  if (present === 0) return usage('--root holds none of the scan roots'); // a wrong root never scans nothing and passes
   return { files: ctx.files, unscanned: ctx.unscanned, realRoot };
 }
 
