@@ -159,10 +159,9 @@ function cmdProductVisionTouch(args) {
     failWithLock(lockPath, `product vision-touch: ${roadmapFile} not found`);
   }
 
-  // A pure CRLF file is edited as LF and written back as CRLF, so FR-004's byte contract holds for it too (follow-up F-010).
-  const visionRaw = fs.readFileSync(visionFile, 'utf8');
-  const visionCrlf = visionRaw.includes('\r\n') && !/(^|[^\r])\n/.test(visionRaw);
-  const visionContentBefore = visionRaw.replace(/\r\n/g, '\n');
+  // Edited raw: the bounding and the updated: match below accept CRLF and keep every other byte, so
+  // FR-004's byte contract holds for CRLF and mixed line endings alike (follow-up F-010).
+  const visionContentBefore = fs.readFileSync(visionFile, 'utf8');
   const { fm: visionFm } = parseNestedFrontmatter(visionContentBefore);
   if (typeof visionFm.updated !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(visionFm.updated)) {
     failWithLock(lockPath, `product vision-touch: ${visionFile} has no valid 'updated: YYYY-MM-DD' frontmatter line to bump — run \`product validate\` to diagnose the file first`);
@@ -184,7 +183,7 @@ function cmdProductVisionTouch(args) {
   // prose body below is never touched), leaving every other line —
   // including whatever whitespace/quoting the user or vision-init originally
   // wrote — untouched.
-  if (!visionContentBefore.startsWith('---\n')) {
+  if (!/^---\r?\n/.test(visionContentBefore)) {
     failWithLock(lockPath, `product vision-touch: ${visionFile} does not start with a '---' frontmatter block`);
   }
   const fmEnd = visionContentBefore.indexOf('\n---', 4);
@@ -193,13 +192,12 @@ function cmdProductVisionTouch(args) {
   }
   const fmBlockBefore = visionContentBefore.slice(0, fmEnd);
   const restAfterFm = visionContentBefore.slice(fmEnd);
-  const updatedLineRe = /^updated:.*$/m;
+  const updatedLineRe = /^updated:[^\r\n]*/m; // stops before a CR, so a CRLF line keeps its ending
   if (!updatedLineRe.test(fmBlockBefore)) {
     failWithLock(lockPath, `product vision-touch: ${visionFile} frontmatter has no 'updated:' line to replace`);
   }
   const fmBlockAfter = fmBlockBefore.replace(updatedLineRe, `updated: ${today}`);
-  const visionContentAfterLf = `${fmBlockAfter}${restAfterFm}`;
-  const visionContentAfter = visionCrlf ? visionContentAfterLf.replace(/\n/g, '\r\n') : visionContentAfterLf;
+  const visionContentAfter = `${fmBlockAfter}${restAfterFm}`;
 
   const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
   const { fm: roadmapFm } = parseNestedFrontmatter(roadmapContent);
