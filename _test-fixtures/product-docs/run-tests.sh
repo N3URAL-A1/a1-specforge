@@ -925,5 +925,23 @@ RC=$?
 assert_rc "f017-after-reindent-add-feature-succeeds" 0 "$RC" "$OUT"
 assert_true "f017-after-reindent-kept-feature-survives" "$(grep -q '^  - id: 001-kept' "$F017_PDIR/ROADMAP.md" && grep -q '^  - id: 002-new' "$F017_PDIR/ROADMAP.md" && echo true || echo false)"
 
+# --- F-006 (follow-up 2026-11-25): the ROADMAP changelog writer heals extra blank lines under the heading
+# and never mixes line endings. Measured red: `## Changelog\s*$` back in appendChangelogEntry() (product-txn.cjs)
+# keeps the extra blank lines (heal case). The crlf case guards the CRLF->LF read in parseNestedFrontmatter()
+# (io-nested-frontmatter.cjs): without it the body keeps CR bytes next to the LF-only frontmatter.
+mk_workdir HEAL_WORK "a1-product-docs-heal"
+cp -R "$SC003_WORK/." "$HEAL_WORK/"
+HEAL_PDIR="$HEAL_WORK/docs/product"
+node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/^## Changelog\n\n/m,"## Changelog\n\n\n\n"))' "$HEAL_PDIR/ROADMAP.md"
+OUT="$(node "$TOOLS" product changelog --entry "heal check" --why "F-006 heal" --dir "$HEAL_PDIR" 2>&1)"
+RC=$?
+assert_rc "f006-heal-changelog" 0 "$RC" "$OUT"
+assert_true "f006-heal-one-blank-line-under-heading" "$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(/^## Changelog\n\n- \*\*/m.test(t)?"true":"false")' "$HEAL_PDIR/ROADMAP.md")"
+node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/\r?\n/g,"\r\n"))' "$HEAL_PDIR/ROADMAP.md"
+OUT="$(node "$TOOLS" product changelog --entry "crlf check" --why "F-006 crlf" --dir "$HEAL_PDIR" 2>&1)"
+RC=$?
+assert_rc "f006-crlf-changelog" 0 "$RC" "$OUT"
+assert_true "f006-crlf-no-mixed-line-endings" "$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(!t.includes("\r")&&/^- \*\*\d{4}-\d{2}-\d{2}\*\* — crlf check/m.test(t)&&/^## Changelog\n\n- \*\*/m.test(t)?"true":"false")' "$HEAL_PDIR/ROADMAP.md")"
+
 echo "product-docs fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
