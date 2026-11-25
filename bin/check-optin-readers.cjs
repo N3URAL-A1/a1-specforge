@@ -8,10 +8,11 @@
 // Symlinks are followed to their real path: every real file and directory is read once, reported under its canonical path
 // (relative to realpath(root)), so an alias or a link to a parent never rescans a tree. A link whose target lies outside the root is
 // not walked and goes to `unscanned` ('outside root'); a target inside the root but outside the scanned roots is not walked;
-// the skip lists (_shared/vendor, node_modules) apply to the canonical path. A link that cannot be resolved ('broken symlink') and a
-// directory or file that cannot be read ('unreadable') are listed in `unscanned` too. --root is resolved against the cwd.
+// the skip lists (_shared/vendor, node_modules) apply to the canonical path. A link that cannot be resolved (ENOENT, ELOOP, ENOTDIR: 'broken symlink') and a
+// path that cannot be resolved or read for another reason such as EACCES ('unreadable') are listed in `unscanned` too. --root is resolved against the cwd and must be a directory (else exit 2).
 // The allowlist contract is enforced here, not only documented:
 //   - every `contains` is at least 20 characters, else `contract_violations` (checked before the scan);
+//   - an entry whose `contains` names no OPTIN_FILES entry can never cover a line of a candidate: `contract_violations` (checked before the scan);
 //   - an entry covers exactly one line (1:1): a further line holding the same `contains` is a reader (`duplicate_of`);
 //   - a line is covered only when every occurrence of the name lies inside the `contains` span (equal occurrence counts);
 //   - an entry whose `contains` names the candidate and that covers no line is `stale` (entries of other opt-in names are not);
@@ -19,7 +20,6 @@
 //     `  entry('<file>', '<contains>', '<reason>'),` equal to a loaded entry, and the whole OPTIN_FILES line equal to its value.
 // The allowlist is loaded from <root>/_shared/lib/optin-logs.cjs when present (JSON `allowlist: "root"`), else from this repo
 // (`"fallback"`). --root EXECUTES that tree's optin-logs.cjs: use trusted trees only. A module without two array exports is exit 2.
-//   - an entry whose `contains` names no OPTIN_FILES entry can never cover a line of a candidate: `contract_violations`.
 // Limit: the scan is literal and line-based. Invisible to it: a reader that reaches the file through a constant
 // (readFileSync(path.join(dir, LOG_FILE))), a name built from split or concatenated literals ('PLAN-REVIEW' + '-LOG.md'), a file
 // whose extension is outside SCAN_EXTS (.py, .ts, .txt), a non-executable file without an extension, and logic inside the trusted
@@ -86,6 +86,7 @@ function isDefinitionLine(text, entries, optinFiles) {
 const count = (text, name) => text.split(name).length - 1;
 const covers = (m, rel, text, name) => m.file === rel && text.includes(m.contains) && count(text, name) === count(m.contains, name);
 
+const BROKEN_CODES = Object.freeze(['ENOENT', 'ELOOP', 'ENOTDIR']);
 const toPosix = (p) => p.split(path.sep).join('/');
 const isOutside = (canon) => canon === '..' || canon.startsWith('../') || path.isAbsolute(canon);
 const isSkipped = (canon) => canon.split('/').some((seg) => SKIP_DIR_NAMES.includes(seg)) || SKIP_REL_DIRS.some((d) => canon === d || canon.startsWith(`${d}/`));
@@ -96,7 +97,7 @@ const isScannable = (st, name) => st.isFile() && (SCAN_EXTS.includes(path.extnam
 function visit(ctx, parent, name) {
   const seen = parent ? `${parent}/${name}` : name;
   let real;
-  try { real = fs.realpathSync(path.join(ctx.realRoot, seen)); } catch (_e) { ctx.unscanned.push({ file: seen, reason: 'broken symlink' }); return; }
+  try { real = fs.realpathSync(path.join(ctx.realRoot, seen)); } catch (e) { ctx.unscanned.push({ file: seen, reason: BROKEN_CODES.includes(e.code) ? 'broken symlink' : 'unreadable' }); return; }
   const canon = toPosix(path.relative(ctx.realRoot, real));
   if (isOutside(canon)) { ctx.unscanned.push({ file: seen, reason: 'outside root' }); return; }
   if (!SCAN_ROOTS.includes(canon.split('/')[0]) || isSkipped(canon) || ctx.visited.has(canon)) return;
@@ -113,9 +114,13 @@ function visit(ctx, parent, name) {
 function listFiles(root) {
   let realRoot;
   try { realRoot = fs.realpathSync(root); } catch (_e) { return usage('--root cannot be resolved'); }
+  try { if (!fs.statSync(realRoot).isDirectory()) return usage('--root is not a directory'); } catch (_e) { return usage('--root is not a directory'); }
   const ctx = { realRoot, visited: new Set(), files: [], unscanned: [] };
   for (const sub of SCAN_ROOTS) {
-    try { fs.lstatSync(path.join(realRoot, sub)); } catch (_e) { continue; } // absent: nothing to scan
+    try { fs.lstatSync(path.join(realRoot, sub)); } catch (e) {
+      if (e.code !== 'ENOENT') ctx.unscanned.push({ file: sub, reason: 'unreadable' }); // absent (ENOENT): nothing to scan
+      continue;
+    }
     visit(ctx, '', sub);
   }
   return { files: ctx.files, unscanned: ctx.unscanned, realRoot };

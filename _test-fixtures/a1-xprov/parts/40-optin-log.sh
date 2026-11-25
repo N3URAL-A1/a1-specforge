@@ -6,8 +6,8 @@
 #   OL4  bin/check-optin-readers.cjs on the real tree: exit 0         OL5  a planted agent line naming the file: exit 1
 #   OL6  .last-run.json has readers (04b, 01-load)                    OL7  self-repair with the log off: the observation holds `recovery`
 #   OL8  line-exact allowlist (an extra line in help-xprov.cjs reads) OL9  buildObservation rejects an unknown recovery action
-#   OL20-OL25 canonical symlink walk, root containment, unreadable paths, dead entry, relative --root (red-making changes at the OL20 block)
 #   OL12-OL16 allowlist contract: duplicate line, widened scan, stale entry, optin-logs.cjs itself, contains < 20
+#   OL20-OL29 canonical symlink walk, root containment, unreadable paths, dead entry, relative --root, broken links, bad --root (red-making changes at the OL20 block)
 #   OL10 compactRecovery is total, bounded and leaks nothing          OL11 compactRecovery keeps `fallback`
 # Helpers are copied from parts 06 and 29 (a part must run alone in its shard).
 
@@ -188,7 +188,7 @@ done
 cp_tree40 "$TMP40/plant19b"; rm -f "$TMP40/plant19b/_shared/lib/optin-logs.cjs"
 run40 "$TMP40/plant19b" rd19b; assert_json "OL19 a root without optin-logs.cjs uses the fallback" "$(cat "$TMP40/rd19b.json")" "j.allowlist" "fallback"
 assert_json "OL19 the real tree uses the root allowlist" "$(cat "$TMP40/rd.json")" "j.allowlist" "root"
-# OL20-OL24: canonical symlink walk, root containment, unreadable paths, dead entries (bug 2026-11-25-optin-checker-symlinks-4).
+# OL20-OL29: canonical symlink walk, root containment, unreadable paths, dead entries, broken links, bad --root (bug 2026-11-25-optin-checker-symlinks-4).
 # Each case names the one production change that turns it red (CONVENTIONS RED proof); every one was run on a git archive copy.
 #   OL20 (parent link): dropping the `SCAN_ROOTS.includes(canon.split('/')[0])` test in visit(): the link to the root walks docs/ (a reader
 #        outside the scanned roots, under skills/up/). OL13 loop13 is the same link in the big plant.
@@ -200,6 +200,11 @@ assert_json "OL19 the real tree uses the root allowlist" "$(cat "$TMP40/rd.json"
 #   OL23 (unreadable dir / file): removing the try/catch around readdirSync (23a) or readFileSync (23b): stack on stderr, rc 1, no JSON.
 #   OL24 (dead entry): removing the `names no OPTIN_FILES entry` test in contractViolations: rc 0, no violation.
 #   OL25 (relative --root): dropping path.resolve(--root): exit 2 (module not found).
+#   OL26 (dangling links, nested and as a top-level scan root): classifying every realpath failure as 'unreadable' (the reason is no
+#        longer 'broken symlink').
+#   OL27 (--root is a file): dropping the `isDirectory()` check in listFiles(): rc 1 (every scan root listed unreadable) instead of exit 2.
+#   OL28 (a file under a read-only dir): the old catch labelling every realpath failure 'broken symlink' (EACCES is 'unreadable').
+#   OL29 (root without access): the per-scan-root lstat catch skipping every error (`continue` without the ENOENT test): rc 0, nothing scanned.
 # OL20: a link to the parent directory: the tree is read once, under its own paths
 cp_tree40 "$TMP40/plant20"; mkdir "$TMP40/plant20/docs"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/plant20/docs/notes.md"; printf 'Read PLAN-REVIEW-LOG.md for the history.\n' >> "$TMP40/plant20/agents/$(basename "$af40")"; ln -s .. "$TMP40/plant20/skills/up"
 run40 "$TMP40/plant20" rd20; assert_rc "OL20 a parent link plus one real reader" 1 "$rc40"
@@ -236,6 +241,24 @@ assert_json "OL24 one contract violation naming the entry" "$(cat "$TMP40/rd24.j
 # OL25: a relative --root works (resolved against the cwd)
 cp_tree40 "$TMP40/plant25"; ( cd "$TMP40" && node "$CHECK40" --name "$OLNAME40" --root plant25 > "$TMP40/rd25.json" 2>/dev/null ); rc40=$?
 assert_rc "OL25 a relative --root" 0 "$rc40"
+# OL26: a dangling link inside a scanned root and a dangling top-level scan root: both unscanned 'broken symlink'
+cp_tree40 "$TMP40/plant26"; ln -s nowhere26.md "$TMP40/plant26/agents/dang.md"; rm -rf "$TMP40/plant26/hooks"; ln -s nowhere26 "$TMP40/plant26/hooks"
+run40 "$TMP40/plant26" rd26; assert_rc "OL26 dangling links fail the check (D1)" 1 "$rc40"
+assert_json "OL26 unscanned: exactly the two links, 'broken symlink'" "$(cat "$TMP40/rd26.json")" "JSON.stringify(j.unscanned.map((u) => u.file + ':' + u.reason).sort())" '["agents/dang.md:broken symlink","hooks:broken symlink"]'
+# OL27: --root pointing to a file is a usage error (exit 2), never a clean scan of nothing
+printf 'x\n' > "$TMP40/rootfile27"; node "$CHECK40" --name "$OLNAME40" --root "$TMP40/rootfile27" >/dev/null 2>&1; assert_rc "OL27 --root is a file" 2 "$?"
+if [[ "$(id -u)" == 0 ]]; then echo "SKIP  OL28/OL29 access cases (running as uid 0)"; else
+  # OL28: a path that cannot be resolved because the directory has no x bit is 'unreadable', not a broken link
+  cp_tree40 "$TMP40/plant28"; mkdir "$TMP40/plant28/agents/ro"; printf 'cat PLAN-REVIEW-LOG.md\n' > "$TMP40/plant28/agents/ro/x.md"; chmod 444 "$TMP40/plant28/agents/ro"
+  run40 "$TMP40/plant28" rd28; chmod 755 "$TMP40/plant28/agents/ro"
+  assert_rc "OL28 a file under a read-only directory fails the check" 1 "$rc40"
+  assert_json "OL28 unscanned: that file, 'unreadable'" "$(cat "$TMP40/rd28.json")" "JSON.stringify(j.unscanned)" '[{"file":"agents/ro/x.md","reason":"unreadable"}]'
+  # OL29: a root without access (mode 000): every scan root is unscanned 'unreadable', rc 1
+  cp_tree40 "$TMP40/plant29"; chmod 000 "$TMP40/plant29"
+  run40 "$TMP40/plant29" rd29; chmod 755 "$TMP40/plant29"
+  assert_rc "OL29 a root without access fails the check" 1 "$rc40"
+  assert_json "OL29 every present scan root is unscanned 'unreadable'" "$(cat "$TMP40/rd29.json")" "j.unscanned.length > 0 && j.unscanned.every((u) => u.reason === 'unreadable') && j.readers.length === 0" "true"
+fi
 # OL4b: the real tree reports no stale entry and no violation
 assert_json "OL4 real tree: stale and contract_violations are empty" "$(cat "$TMP40/rd.json")" "j.stale.length + '|' + j.contract_violations.length" "0|0"
 
