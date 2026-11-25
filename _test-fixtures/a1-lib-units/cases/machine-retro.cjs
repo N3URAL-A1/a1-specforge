@@ -10,6 +10,9 @@
 //   no machine_record idempotency check                         -> MR8
 //   retro-* scopes kept in readScopes                           -> MR10
 //   gates_fired item without `caught`                           -> MR3 (item-format assert; retro validate itself still exits 0)
+// Measured red 2026-11-25 (audit F-004, F-008):
+//   renderEntry writes project raw                              -> MR23a-c
+//   validGate on String(g.id) / String(g.verdict) (null-guarded) -> MR24a, MR24b, MR24d
 
 const fs = require('fs');
 const path = require('path');
@@ -290,6 +293,26 @@ for (const [label, nl] of [['CRLF', '\r\n'], ['CR', '\r'], ['LS', '\u2028'], ['N
     check('MR22b kind: machine + ' + JSON.stringify(tail) + ': banned whenever the store reader accepts it', !head || banned);
     check('MR22c kind: machine + ' + JSON.stringify(tail) + ': banned', banned);
   }
+}
+
+// MR23 (audit F-004) a project value outside SLUG_RE is never written raw: a checkout name with a newline cannot add head lines.
+{
+  const render = (project) => M.renderEntry({ date: '2026-11-25', spec: 'fx-spec', pr: 7, project, retro: { gates_fired: [], result: 'pass' }, decision: { required: false, reasons: [] }, issues: [] });
+  const evil = render('x\nkind: machine\nmachine_record: other#9');
+  eq('MR23a project with a newline: written as unknown', evil.split('\n').filter((l) => l.startsWith('project:')), ['project: unknown']);
+  eq('MR23b project with a newline: exactly one machine_record line', evil.split('\n').filter((l) => l.startsWith('machine_record:')).length, 1);
+  eq('MR23c project with a space or upper case: unknown', [render('My Repo'), render(undefined)].map((e) => /^project: (.*)$/m.exec(e)[1]), ['unknown', 'unknown']);
+  eq('MR23d a valid slug is kept', /^project: (.*)$/m.exec(render('a1-specforge'))[1], 'a1-specforge');
+}
+
+// MR24 (audit F-008) a gate item without string id or verdict is dropped, never rendered as `id: undefined`; the drop asks for prose.
+{
+  const gates = [{ verdict: 'pass', caught: false }, { id: 'lint', caught: false }, null, { id: 'ok-gate', verdict: 'pass', caught: false }];
+  const entry = M.renderEntry({ date: '2026-11-25', spec: 'fx-spec', pr: 7, project: 'p', retro: { gates_fired: gates, result: 'pass' }, decision: { required: false, reasons: [] }, issues: [] });
+  eq('MR24a no undefined in the entry', /undefined|null/.test(entry), false);
+  eq('MR24b only the valid gate is written', entry.split('\n').filter((l) => l.startsWith('  - {id:')), ['  - {id: ok-gate, verdict: pass, caught: false}']);
+  eq('MR24c a dropped gate sets prose_required: true', /^prose_required: true$/m.test(entry), true);
+  eq('MR24d proseDecision flags the invalid gate', M.proseDecision({ gates_fired: gates.filter(Boolean), result: 'pass' }).reasons.includes('invalid_gate_id'), true);
 }
 
 done();

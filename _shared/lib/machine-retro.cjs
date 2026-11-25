@@ -14,6 +14,7 @@ const { listGateLogs } = require('./worktree-gatelog.cjs');
 const { gatesFired, readGateLog, mergeByTs } = require('./retro-gatelog.cjs');
 const { assertVaultWriteContained } = require('./fs-safe.cjs');
 const { linesOf, blocksOf, isDelim } = require('./retro-view.cjs');
+const { SLUG_RE } = require('./project-slug.cjs');
 
 const STORE_FILE = 'a1-new-feature.md';
 const LOCK_DIR = 'a1-new-feature.lock.d';
@@ -21,7 +22,10 @@ const MAX_BYTES = 20 * 1024 * 1024;
 const RETRO_SCOPE_PREFIX = 'retro-';
 const GATE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const VERDICT_RE = /^[a-z_]{1,32}$/;
-const validGate = (g) => GATE_ID_RE.test(String(g.id)) && VERDICT_RE.test(String(g.verdict));
+// typeof first: String(undefined) would pass both patterns and render as `id: undefined` (audit F-008).
+const validGate = (g) => g !== null && typeof g === 'object' && typeof g.id === 'string' && typeof g.verdict === 'string'
+  && GATE_ID_RE.test(g.id) && VERDICT_RE.test(g.verdict);
+const UNKNOWN_PROJECT = 'unknown';
 
 function refuse(message) {
   const err = new Error(message);
@@ -55,6 +59,8 @@ function proseDecision({ gates_fired, result, issues, problem }) {
 /** @returns {string} the store entry in the shape of a real store entry (`gates_fired` as firedYaml prints it) */
 function renderEntry({ date, spec, pr, project, retro, decision, issues }) {
   const list = Array.isArray(issues) ? issues : [];
+  // project may come from a checkout's directory name; outside SLUG_RE (e.g. a newline) it is never written raw (audit F-004).
+  const proj = typeof project === 'string' && SLUG_RE.test(project) ? project : UNKNOWN_PROJECT;
   const valid = retro.gates_fired.filter(validGate); // an id or verdict outside the pattern is dropped, never written raw (SEC-1)
   const dropped = valid.length !== retro.gates_fired.length;
   const fired = valid.length === 0
@@ -65,7 +71,7 @@ function renderEntry({ date, spec, pr, project, retro, decision, issues }) {
     `date: ${date}`,
     'kind: machine',
     `task: a1-new-feature ${spec} (PR #${pr})`,
-    `project: ${project}`,
+    `project: ${proj}`,
     `result: ${retro.result}`,
     `issues: [${list.join(', ')}]`,
     `evidence: pr-${pr}`,
