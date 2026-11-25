@@ -72,8 +72,11 @@ json_get() { printf '%s' "$OUT" | node -e 'const j=JSON.parse(require("fs").read
 
 # ---- ES0 fixtures are byte copies of real vault files ----
 n_same=0
-cmp -s "$BASE_A" "$HOME/N3URAL-Vault/project/a1-office/postmortems/2026-07-22-briefing-agent-def-id-mismatch.md" 2>/dev/null && n_same=$((n_same + 1))
-[[ -d "$HOME/N3URAL-Vault" ]] || n_same=1   # vault absent (CI): the byte check is local-only
+ES0_SRC="$HOME/N3URAL-Vault/project/a1-office/postmortems/2026-07-22-briefing-agent-def-id-mismatch.md"
+# The byte check is local-only: it is skipped when the source file is absent (CI without a vault, or a partially synced vault
+# such as aiserver 2026-11-24 with 691 of 4275 files), not only when the vault root is absent (audit F-007).
+if [[ -f "$ES0_SRC" ]]; then cmp -s "$BASE_A" "$ES0_SRC" && n_same=1
+else n_same=1; echo "  note: ES0b skipped, vault source absent: $ES0_SRC"; fi
 assert_eq "ES0 escaped base fixtures present (count assert, 2 files)" "$(ls "$ESC_BASE"/*.md | wc -l | tr -d ' ')" "2"
 assert_eq "ES0b base A byte-equal to its vault source (count)" "$n_same" "1"
 assert_eq "ES0c base A holds severity blocker (lower) and no found_by (count 1/0)" \
