@@ -12,6 +12,8 @@
 #   _unscoped no longer left out (wanted() in buildReport)           : PT14a, PT14b red
 #   validStoreRow() accepts everything                               : PT15a red
 #   why counts in a plain {} (not Object.create(null))               : PT15b red
+#   (bug project-slug-source) readStore() reads the store file named after an unsafe checkout folder, buildReport() prints it
+#   (drop the `project === null` return in readStore, or repoProjectSlug() returning the raw basename) : PT16 red
 
 PT_GL="$SHARED/lib/gate-log.cjs"
 PT_SHA="$(printf 'd%.0s' $(seq 1 40))"
@@ -233,3 +235,13 @@ pt_repo PT15Q pt15q
 pt_plant "$PT15Q" pr-9 '[{"gate":"pr-merge-check","exit":0,"dur":1,"why":"constructor"},{"gate":"pr-merge-check","exit":0,"dur":1,"why":"constructor"}]'
 pt_run "$PT_NOSTORE" "$PT15Q" --repo "$PT15Q" --json
 assert_eq "PT15b why-code constructor counts as 2" "$(pt_j 'JSON.stringify(j.ci_evidence_why)')" '{"constructor":2}'
+
+# ---- PT16 (bug project-slug-source): a checkout folder that is no safe name reads no store file and reports project null ----
+mk_workdir PT16B pt16; PT16P="$PT16B/we ird"; mkdir -p "$PT16P"
+git -C "$PT16P" init -q -b main; echo a > "$PT16P/a.txt"; git -C "$PT16P" add -A; pt_git "$PT16P" commit -qm one
+pt_plant "$PT16P" pr-5 '[{"gate":"verify-run","exit":0,"dur":3}]'
+pt_store PT16V "we ird" "$ROW5"
+printf '%s\n' "$ROW5" > "$PT16V/pattern/a1-learnings/_runs/null.jsonl" # what a null project would stringify to
+pt_run "$PT16V" "$PT16P" --repo "$PT16P" --json
+assert_rc "PT16a exit 0" 0 "$RC" "$ERR"
+assert_eq "PT16b project is null, no store rows read, the live row stays" "$(pt_j 'j.project+"|"+j.rows.filter(r=>r.source==="store").length+"|"+j.rows.filter(r=>r.source==="live").length')" "null|0|1"

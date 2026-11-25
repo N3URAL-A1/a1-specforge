@@ -15,6 +15,7 @@ const { gatesFired, readGateLog, mergeByTs } = require('./retro-gatelog.cjs');
 const { assertVaultWriteContained } = require('./fs-safe.cjs');
 const { linesOf, blocksOf, isDelim } = require('./retro-view.cjs');
 const { SLUG_RE } = require('./project-slug.cjs');
+const { SCOPE_RE } = require('./gate-log.cjs');
 
 const STORE_FILE = 'a1-new-feature.md';
 const LOCK_DIR = 'a1-new-feature.lock.d';
@@ -26,6 +27,11 @@ const VERDICT_RE = /^[a-z_]{1,32}$/;
 const validGate = (g) => g !== null && typeof g === 'object' && typeof g.id === 'string' && typeof g.verdict === 'string'
   && GATE_ID_RE.test(g.id) && VERDICT_RE.test(g.verdict);
 const UNKNOWN_PROJECT = 'unknown';
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const PR_RE = /^[1-9][0-9]{0,6}$/;
+const ISSUES_RE = /^[a-z0-9][a-z0-9_-]{0,40}(,[a-z0-9][a-z0-9_-]{0,40}){0,19}$/;
+const ISSUE_TAG_RE = /^[a-z0-9][a-z0-9_-]{0,40}$/;
+const RESULT_RE = /^(pass|fail)$/;
 
 function refuse(message) {
   const err = new Error(message);
@@ -59,6 +65,15 @@ function proseDecision({ gates_fired, result, issues, problem }) {
 /** @returns {string} the store entry in the shape of a real store entry (`gates_fired` as firedYaml prints it) */
 function renderEntry({ date, spec, pr, project, retro, decision, issues }) {
   const list = Array.isArray(issues) ? issues : [];
+  // Every head field except project is written raw: outside its pattern it would inject head lines or forge prose_required.
+  const bad = (v, re) => (typeof v !== 'string' && typeof v !== 'number') || !re.test(String(v));
+  if (bad(date, DATE_RE)) throw refuse('machine retro: date is not YYYY-MM-DD');
+  if (bad(spec, SCOPE_RE) || String(spec).includes('..')) throw refuse('machine retro: spec is not a safe spec id');
+  if (bad(pr, PR_RE)) throw refuse('machine retro: pr is not a positive integer');
+  if (list.some((t) => bad(t, ISSUE_TAG_RE))) throw refuse('machine retro: an issue tag is outside its pattern');
+  if (bad(retro.result, RESULT_RE)) throw refuse('machine retro: result is not pass or fail');
+  if (!decision || typeof decision.required !== 'boolean') throw refuse('machine retro: decision.required is not a boolean');
+  if (retro.gates_fired.some((g) => validGate(g) && typeof g.caught !== 'boolean')) throw refuse('machine retro: a gates_fired entry has a non-boolean caught');
   // project may come from a checkout's directory name; outside SLUG_RE (e.g. a newline) it is never written raw (audit F-004).
   const proj = typeof project === 'string' && SLUG_RE.test(project) ? project : UNKNOWN_PROJECT;
   const valid = retro.gates_fired.filter(validGate); // an id or verdict outside the pattern is dropped, never written raw (SEC-1)
@@ -188,7 +203,10 @@ function findMachineRecord({ store, spec, pr }) {
   if (text === null) return { found: false, prose_required: true };
   const head = headOf(text, spec, pr);
   if (!head) return { found: false, prose_required: true };
-  return { found: true, prose_required: !hasLine(head, (l) => /^prose_required: false\s*$/.test(l)) };
+  // Fail closed: exactly one prose_required line, else prose is required (a forged second line cannot say false).
+  const proseLines = head.lines.filter((l) => l.startsWith('prose_required:'));
+  const saysFalse = proseLines.length === 1 && /^prose_required: false\s*$/.test(proseLines[0]);
+  return { found: true, prose_required: !saysFalse };
 }
 
-module.exports = { deriveRetro, proseDecision, renderEntry, readScopes, appendMachineRetro, findMachineRecord };
+module.exports = { PR_RE, ISSUES_RE, deriveRetro, proseDecision, renderEntry, readScopes, appendMachineRetro, findMachineRecord };

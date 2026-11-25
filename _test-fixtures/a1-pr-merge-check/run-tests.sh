@@ -172,6 +172,11 @@ vmc --bug 2026-10-21-vault-bug --slug demo
 expect "B7 --bug in the vault (project/<slug>/fixes): exit 0" 0 "$RC"
 vmc --bug 2026-10-21-vault-bug --slug other
 expect "B8 same id under another project slug does not resolve: exit 1" "1|bug_unresolved" "$RC|$(reasons)"
+# review round 1 of PR #130: an unsafe folder name gives a null slug; a report under project/null/fixes must not resolve.
+# Measured red: dropping `slug !== null &&` in bugResolves() (pr-merge-check.cjs) crashes it (path.join with null, exit 2).
+mkdir -p "$V/project/null/fixes"; fixrep "$V/project/null/fixes/2026-10-21-null-bug.md" null-bug fixed
+PREV_P="$P"; new_pr "Weird Dir" 1 1; vmc --bug 2026-10-21-null-bug; P="$PREV_P"
+expect "B9 unsafe folder name, no --slug: project/null/fixes does not resolve: exit 1" "1|bug_unresolved" "$RC|$(reasons)"
 vmc --bug 2026-10-21-old --slug demo
 expect "N4 a vault file with the old frontmatter shape does not resolve: exit 1 bug_unresolved" "1|bug_unresolved" "$RC|$(reasons)"
 # R1: a fix report as basic-memory re-dumps it (PyYAML: folded title, unindented lists, permalink appended). The files are

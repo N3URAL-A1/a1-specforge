@@ -327,6 +327,13 @@ function refuseUnpreservedGateLogs(entry) {
   }
   const scopes = unpreservedScopes(entry.worktree_path, store);
   if (scopes.length === 0) return;
+  if (require('./project-slug.cjs').repoProjectSlug(entry.worktree_path) === null) {
+    process.stderr.write(
+      `error: ${GATE_LOG_UNPRESERVED}: ${scopes.length} gate log(s) in ${entry.worktree_path} cannot be recorded: the checkout folder name is not a safe project name. ` +
+        `Nothing was removed. Set \`project:\` in docs/product/ROADMAP.md to a slug or rename the checkout, then run run record; or use --mode handoff.\n`
+    );
+    process.exit(1);
+  }
   const cmds = scopes.map((scope) => `  a1-tools run record --repo ${entry.worktree_path} --scope ${scope}`).join('\n');
   process.stderr.write(
     `error: ${GATE_LOG_UNPRESERVED}: ${scopes.length} gate log(s) in ${entry.worktree_path} have no run record and would be deleted with the worktree. ` +
