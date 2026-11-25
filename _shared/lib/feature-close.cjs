@@ -24,13 +24,12 @@ const { gitSafe } = require('./git-safe.cjs');
 const { envWithoutGitRedirects } = require('./git-env.cjs');
 const { SCOPE_RE } = require('./gate-log.cjs');
 const { listGateLogs } = require('./worktree-gatelog.cjs');
-const { repoProjectSlug } = require('./project-slug.cjs');
+const { repoProjectSlug, SLUG_RE } = require('./project-slug.cjs');
 const { storeDir } = require('./run-record.cjs');
 const MR = require('./machine-retro.cjs');
 
 const FACADE = path.join(__dirname, '..', 'a1-tools.cjs');
-const PR_RE = /^[1-9][0-9]{0,6}$/;
-const ISSUES_RE = /^[a-z0-9][a-z0-9_-]{0,40}(,[a-z0-9][a-z0-9_-]{0,40}){0,19}$/;
+const { PR_RE, ISSUES_RE } = MR;
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const STAGES = Object.freeze(['started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done']);
 const USAGE = 'a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only] [--issues <tags>] | feature close --cleanup-only [--repo <dir>]';
@@ -103,7 +102,9 @@ function resolveSpec(ctx) {
   let p = ctx.opts.spec === null ? null : path.resolve(ctx.opts.repo, ctx.opts.spec);
   if (p === null) {
     const peek = peekVaultRoot();
-    if (peek) p = path.join(peek.root, 'project', repoProjectSlug(ctx.repo), 'spec', `${ctx.opts.by}.md`);
+    const slug = repoProjectSlug(ctx.repo);
+    if (peek && slug === null) throw new CloseError('spec_not_found', 'args', 'the checkout folder name is not a safe project name; pass --spec <path>');
+    if (peek) p = path.join(peek.root, 'project', slug, 'spec', `${ctx.opts.by}.md`);
   }
   let isFile = false;
   try { isFile = p !== null && fs.statSync(p).isFile(); } catch (_e) { /* not there */ }
@@ -192,7 +193,9 @@ function machineRetro(ctx) {
   if (store === null) return skip('no learning store; no machine record written');
   if (rs.problem) return skip(`${rs.problem}; no machine record written`);
   if (rs.records.length === 0) return skip(null);
-  const entry = MR.renderEntry({ date: new Date().toISOString().slice(0, 10), spec: ctx.opts.by, pr: ctx.opts.pr, project: repoProjectSlug(ctx.repo), retro, decision, issues: ctx.opts.issues });
+  const project = repoProjectSlug(ctx.repo);
+  if (project === null || !SLUG_RE.test(project)) ctx.warnings.push('machine-retro: the project name is not a lower-case slug; the record is written with project: unknown');
+  const entry = MR.renderEntry({ date: new Date().toISOString().slice(0, 10), spec: ctx.opts.by, pr: ctx.opts.pr, project, retro, decision, issues: ctx.opts.issues });
   let r;
   try { r = MR.appendMachineRetro({ store, spec: ctx.opts.by, pr: ctx.opts.pr, entry }); } catch (e) {
     if (e && e.exit === 2) throw new CloseError('step_failed', 'machine-retro', String(e.message).slice(0, 200));

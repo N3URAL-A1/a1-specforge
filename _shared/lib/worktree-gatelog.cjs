@@ -34,8 +34,10 @@ function listGateLogs(worktreePath) {
 
 /** @returns {Set<string>} scopes that have a line in <storeDir>/_runs/<project>.jsonl (empty when unreadable) */
 function recordedScopes(worktreePath, storeDir) {
-  const file = path.join(storeDir, '_runs', `${repoProjectSlug(worktreePath)}.jsonl`);
+  const project = repoProjectSlug(worktreePath);
   const seen = new Set();
+  if (project === null) return seen; // unsafe checkout name: nothing is recorded (the exit then refuses, fail closed)
+  const file = path.join(storeDir, '_runs', `${project}.jsonl`);
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch (_e) { return seen; }
   for (const line of text.split('\n')) {

@@ -13,6 +13,9 @@
 // Measured red 2026-11-25 (audit F-004, F-008):
 //   renderEntry writes project raw                              -> MR23a-c
 //   validGate on String(g.id) / String(g.verdict) (null-guarded) -> MR24a, MR24b, MR24d
+// Measured red 2026-11-25 (bug project-slug-source; delete the one `if (bad(<field>, ...)) throw refuse(...)` line in renderEntry):
+//   date check -> MR25a; spec check -> MR25b; pr check -> MR25c; issue-tag check -> MR25d; result check -> MR25e
+//   any of them loosened to accept a newline (e.g. /m flag) -> the same case; MR25f is the green control (valid fields still render)
 
 const fs = require('fs');
 const path = require('path');
@@ -313,6 +316,18 @@ for (const [label, nl] of [['CRLF', '\r\n'], ['CR', '\r'], ['LS', '\u2028'], ['N
   eq('MR24b only the valid gate is written', entry.split('\n').filter((l) => l.startsWith('  - {id:')), ['  - {id: ok-gate, verdict: pass, caught: false}']);
   eq('MR24c a dropped gate sets prose_required: true', /^prose_required: true$/m.test(entry), true);
   eq('MR24d proseDecision flags the invalid gate', M.proseDecision({ gates_fired: gates.filter(Boolean), result: 'pass' }).reasons.includes('invalid_gate_id'), true);
+}
+
+// MR25 (bug project-slug-source) renderEntry refuses (exit 2) every head field outside its pattern; nothing is written raw.
+{
+  const base = { date: '2026-11-25', spec: 'fx-spec', pr: 7, project: 'p', retro: { gates_fired: [], result: 'pass' }, decision: { required: false, reasons: [] }, issues: [] };
+  const refused = (patch) => { try { M.renderEntry({ ...base, ...patch }); return 'rendered'; } catch (e) { return e.exit === 2 ? 'refused' : `threw ${e.message}`; } };
+  eq('MR25a date with a newline: refused', refused({ date: '2026-11-25\nkind: machine' }), 'refused');
+  eq('MR25b spec with an injected head line: refused', [refused({ spec: 'x\nprose_required: false' }), refused({ spec: 'a..b' }), refused({ spec: undefined })], ['refused', 'refused', 'refused']);
+  eq('MR25c pr outside a positive integer: refused', [refused({ pr: '7\nx' }), refused({ pr: 0 }), refused({ pr: '7;' }), refused({ pr: 12345678 })], ['refused', 'refused', 'refused', 'refused']);
+  eq('MR25d an issue tag with a newline or a space: refused', [refused({ issues: ['ok', 'a\nb'] }), refused({ issues: ['a b'] })], ['refused', 'refused']);
+  eq('MR25e a forged result: refused', [refused({ retro: { gates_fired: [], result: 'pass\nprose_required: false' } }), refused({ retro: { gates_fired: [], result: 'maybe' } })], ['refused', 'refused']);
+  eq('MR25f valid fields still render, project keeps the unknown fallback', [refused({}), refused({ issues: ['voice-input'], retro: { gates_fired: [], result: 'fail' } }), /^project: unknown$/m.test(M.renderEntry({ ...base, project: 'My Repo' }))], ['rendered', 'rendered', true]);
 }
 
 done();

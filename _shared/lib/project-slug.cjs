@@ -10,6 +10,13 @@ const path = require('path');
 const { parseNestedFrontmatter } = require('./io.cjs');
 
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,100}$/;
+// Case-tolerant: checkout names (and fixture temp dirs) carry mixed case. Anything else (space, newline, leading dot) is not a name.
+const SAFE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/;
+
+/** @param {string} name @returns {string|null} `name` when it is a safe file/path segment, else null (never `.test(null)`) */
+function safeName(name) {
+  return typeof name === 'string' && SAFE_NAME_RE.test(name) ? name : null;
+}
 
 /** @param {string} dir @returns {string|null} ROADMAP.md frontmatter `project` when it is a valid slug */
 function roadmapProject(dir) {
@@ -20,9 +27,9 @@ function roadmapProject(dir) {
   return null;
 }
 
-/** @param {{slug?: string, project: string}} opts @returns {string} */
+/** @param {{slug?: string, project: string}} opts @returns {string|null} null when no source yields a safe name */
 function projectSlug(opts) {
-  return opts.slug || roadmapProject(opts.project) || path.basename(opts.project);
+  return safeName(opts.slug || roadmapProject(opts.project) || path.basename(opts.project));
 }
 
 /** @param {string} repo @returns {string} the main checkout of a linked worktree, else `repo` itself */
@@ -40,9 +47,9 @@ function mainCheckoutDir(repo) {
   }
 }
 
-/** @param {string} repo @returns {string} roadmap project, else the directory name of the main checkout */
+/** @param {string} repo @returns {string|null} roadmap project, else the directory name of the main checkout; null when unsafe */
 function repoProjectSlug(repo) {
-  return roadmapProject(repo) || path.basename(mainCheckoutDir(repo));
+  return safeName(roadmapProject(repo) || path.basename(mainCheckoutDir(repo)));
 }
 
-module.exports = { SLUG_RE, roadmapProject, projectSlug, mainCheckoutDir, repoProjectSlug };
+module.exports = { SLUG_RE, SAFE_NAME_RE, roadmapProject, projectSlug, mainCheckoutDir, repoProjectSlug };

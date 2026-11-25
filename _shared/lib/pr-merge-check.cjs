@@ -156,7 +156,8 @@ function bugResolves(opts, baseSha) {
   const stem = opts.bug.replace(/\.md$/, '');
   if (stem.endsWith('.postmortem')) return false; // a postmortem is not the fix report
   const peek = peekVaultRoot();
-  if (peek && isFixReportText(readFileOrNull(path.join(peek.root, 'project', projectSlug(opts), 'fixes', `${stem}.md`)))) return true;
+  const slug = projectSlug(opts);
+  if (peek && slug !== null && isFixReportText(readFileOrNull(path.join(peek.root, 'project', slug, 'fixes', `${stem}.md`)))) return true;
   return !!baseSha && isFixReportText(gitRaw(opts.project, ['show', `${baseSha}:.a1/fixes/${stem}.md`]));
 }
 

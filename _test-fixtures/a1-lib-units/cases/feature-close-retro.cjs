@@ -10,6 +10,9 @@
 //   decideRetro removed from the --check-only plan             -> FR3
 //   the issues regex accepts `;`                               -> FR5
 //   a missing store throws instead of warning                  -> FR7
+// Measured red 2026-11-25 (bug project-slug-source; one edit each in a scratch copy of feature-close.cjs, this file run):
+//   resolveSpec drops the `slug === null` branch (no --spec hint) -> FR9
+//   the `project === null || !SLUG_RE.test(project)` warning removed -> FR10
 
 const fs = require('fs');
 const path = require('path');
@@ -53,7 +56,7 @@ function build(name, o = {}) {
   const root = path.join(WORK, name);
   fs.mkdirSync(root, { recursive: true });
   const t = {
-    root, A: path.join(root, 'proj-a'), origin: path.join(root, 'origin.git'), B: path.join(root, 'proj-b'),
+    root, A: path.join(root, o.primary || 'proj-a'), origin: path.join(root, 'origin.git'), B: path.join(root, 'proj-b'),
     reg: path.join(root, 'registry.json'), spec: path.join(root, 'vault', 'project', 'proj-a', 'spec', `${SPEC_ID}.md`), state: path.join(root, 'gh-state.json'),
   };
   t.env = { ...BASE_ENV, A1_WORKTREE_REGISTRY: t.reg, A1_VAULT_ROOT: path.join(root, 'vault'), A1_GH_BIN: path.join(root, 'gh.cjs'), A1_FEATURE_CLOSE_TEST: '1', FAKE_GH_STATE: t.state };
@@ -188,6 +191,24 @@ const { appendGateLine } = require(path.join(LIB, 'gate-log.cjs'));
   const r = close(t, ARGS);
   check('FR7 exit 0, machine-retro skipped, a warning names it, no entry file', r.rc === 0 && r.json && stepResult(r.json, 'machine-retro') === 'skipped' && r.json.warnings.some((w) => /machine-retro/.test(w)) && read(STORE(t)) === null, `rc=${r.rc} out=${r.out}`);
   check('FR7 the worktree was still exited, retro still reported', r.json && stepResult(r.json, 'worktree-exit') === 'done' && r.json.retro && typeof r.json.retro.prose_required === 'boolean', r.out);
+}
+
+// FR9 (bug project-slug-source) a checkout folder that is no safe project name: without --spec the close stops at spec_not_found and
+// the message names --spec; nothing changed.
+{
+  const t = build('fr9', { primary: 'Proj A' });
+  const before = files(t);
+  const r = close(t, ARGS);
+  check('FR9 spec_not_found with a --spec hint, files unchanged', r.rc !== 0 && r.json && r.json.reason === 'spec_not_found' && /--spec/.test(r.json.detail || '') && JSON.stringify(before) === JSON.stringify(files(t)), r.out);
+}
+
+// FR10 (bug project-slug-source) a mixed-case folder is a safe name but no lower-case slug: the record says project: unknown and the close
+// warns about the fallback.
+{
+  const t = build('fr10', { primary: 'Proj-A' });
+  const r = close(t, [...ARGS, '--spec', t.spec]);
+  check('FR10 exit 0, a warning names the unknown fallback', r.rc === 0 && r.json && r.json.warnings.some((w) => /project: unknown/.test(w)), r.out);
+  check('FR10 the stored entry has project: unknown', /\nproject: unknown\n/.test(read(STORE(t)) || ''), read(STORE(t)));
 }
 
 done();

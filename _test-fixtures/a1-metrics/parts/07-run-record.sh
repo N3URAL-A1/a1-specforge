@@ -10,6 +10,7 @@
 #   runs-file cap / unsafe name throw exit 2           : RR13a, RR14 red
 #   gate log lstat/isFile/size check removed           : RR13b, RR15 red (FIFO hangs, caught by the 20 s spawnSync timeout, exit 124)
 #   why counts in a plain {}                           : RR16 red
+#   (bug project-slug-source) the `project === null ||` check dropped in record() (SAFE_NAME_RE.test(null) is true, null.jsonl is written) : RR14a, RR14c red
 
 RR_GL="$SHARED/lib/gate-log.cjs"
 RR_SHA="$(printf 'c%.0s' $(seq 1 40))"
@@ -186,6 +187,16 @@ rr_plant "$RR14P" pr-2 '[{"gate":"verify-run","exit":0,"dur":3}]'
 rr_run "$RR14V" --repo "$RR14P" --scope pr-2 --pr 2
 assert_rc "RR14a unsafe project name: exit 1" 1 "$RC" "$OUT"; assert_has "RR14a reason" "$OUT" "unsafe_project_name"
 assert_eq "RR14b no _runs directory created" "$([[ -e "$RR14V/pattern/a1-learnings/_runs" ]] && echo yes || echo no)" "no"
+
+# RR14c — a linked worktree with a safe name of an unsafe main checkout: the main checkout names the project, so the run is refused
+mk_workdir RR14WB rr14c; RR14M="$RR14WB/Main Repo"; mkdir -p "$RR14M"; rr_store RR14WV rr14wv
+git -C "$RR14M" init -q -b main; echo a > "$RR14M/a.txt"; git -C "$RR14M" add -A
+git -C "$RR14M" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -qm one
+git -C "$RR14M" worktree add -q "$RR14WB/wt-safe" -b wt-branch 2>/dev/null
+rr_plant "$RR14WB/wt-safe" pr-2 '[{"gate":"verify-run","exit":0,"dur":3}]'
+rr_run "$RR14WV" --repo "$RR14WB/wt-safe" --scope pr-2 --pr 2
+assert_rc "RR14c worktree of an unsafe main checkout: exit 1" 1 "$RC" "$OUT"; assert_has "RR14c reason" "$OUT" "unsafe_project_name"
+assert_eq "RR14c no _runs directory created" "$([[ -e "$RR14WV/pattern/a1-learnings/_runs" ]] && echo yes || echo no)" "no"
 
 # RR15 — a FIFO as gate log does not hang run record
 rr_repo RR15P rr15; rr_store RR15V rr15v

@@ -142,7 +142,9 @@ function readStore(repo) {
   const out = { rows: [], unparsable: 0, stamps: new Map(), why: new Map() };
   const peek = peekVaultRoot();
   if (!peek) return out;
-  const file = path.join(peek.root, 'pattern', 'a1-learnings', '_runs', `${repoProjectSlug(repo)}.jsonl`);
+  const project = repoProjectSlug(repo);
+  if (project === null) return out; // an unsafe checkout name reads no store file
+  const file = path.join(peek.root, 'pattern', 'a1-learnings', '_runs', `${project}.jsonl`);
   let text = '';
   try {
     const st = fs.lstatSync(file);
