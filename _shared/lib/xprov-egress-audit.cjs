@@ -5,8 +5,8 @@
 // 2026-11-25-plan-review-egress-audit).
 //
 //   <owner home>/.a1-xprov/egress-audit.jsonl   (file mode 0600, directory as the other owner stores)
-//     one JSON object per line: { ts, repo, gate, mode, phase, round, lane, commit, input_sha256, diff_sha256,
-//                                 model_pinned, prev }
+//     one JSON object per line: { ts, repo, gate, mode, phase, round, lane, commit, tree, content_sha256, input_sha256,
+//                                 feedback_sha256, diff_sha256, model_pinned, prev }
 //     `prev` = sha256 (hex) of the previous line's exact text, null on the first line.
 //
 // One line per `spawnRunner` call, written BEFORE the spawn (audit before effect: a failed append refuses the spawn).
@@ -24,12 +24,12 @@ const OH = require('./xprov-owner-home.cjs');
 const AUDIT = require('./xprov-audit.cjs');
 
 const EGRESS_FILE = 'egress-audit.jsonl';
-const LOCK_FILE = '.egress-audit.lock';
+const LOCK_FILE = AUDIT.EGRESS_LOCK_FILE;
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 const TAIL_BYTES = 65536; // one line is far below this; the tail holds the last complete line
 const SHA_RE = /^[0-9a-f]{64}$/;
-const LINE_KEYS = Object.freeze(['ts', 'repo', 'gate', 'mode', 'phase', 'round', 'lane', 'commit', 'input_sha256', 'diff_sha256', 'model_pinned', 'prev']);
+const LINE_KEYS = Object.freeze(['ts', 'repo', 'gate', 'mode', 'phase', 'round', 'lane', 'commit', 'tree', 'content_sha256', 'input_sha256', 'feedback_sha256', 'diff_sha256', 'model_pinned', 'prev']);
 
 const egressPath = () => path.join(X.xprovHome(), EGRESS_FILE);
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
@@ -42,18 +42,12 @@ function validLine(o) {
   if (keys.length !== LINE_KEYS.length || !LINE_KEYS.every((k) => keys.includes(k))) return false;
   return typeof o.ts === 'string' && typeof o.repo === 'string' && typeof o.gate === 'string' && typeof o.mode === 'string'
     && typeof o.phase === 'string' && Number.isInteger(o.round) && nullableText(o.lane) && nullableText(o.commit)
+    && nullableText(o.tree) && nullableSha(o.content_sha256) && nullableSha(o.feedback_sha256)
     && typeof o.input_sha256 === 'string' && SHA_RE.test(o.input_sha256) && nullableSha(o.diff_sha256)
     && typeof o.model_pinned === 'string' && nullableSha(o.prev);
 }
 
-function ensureHome() {
-  const home = X.xprovHome();
-  try { fs.mkdirSync(home, { mode: DIR_MODE }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
-  const st = fs.lstatSync(home);
-  if (st.isSymbolicLink() || !st.isDirectory()) throw C.inputError(`${home} is not a real directory; refusing to write the egress audit`, 'egress_audit_dir');
-  fs.chmodSync(home, DIR_MODE);
-  return home;
-}
+const ensureHome = () => AUDIT.ensureHome('the egress audit');
 
 /** Opens the file without following a symlink; a non-regular target is refused. */
 function openAppend(file) {
@@ -61,7 +55,8 @@ function openAppend(file) {
   try { fd = fs.openSync(file, fs.constants.O_RDWR | fs.constants.O_APPEND | fs.constants.O_CREAT | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK, FILE_MODE); } catch (e) {
     throw C.inputError(`the egress audit ${file} cannot be opened for append (${e.code || 'error'}; a symlink or an unwritable file is refused)`, 'egress_audit_open');
   }
-  if (!fs.fstatSync(fd).isFile()) { fs.closeSync(fd); throw C.inputError(`the egress audit ${file} is not a regular file`, 'egress_audit_open'); }
+  const st = fs.fstatSync(fd);
+  if (!st.isFile() || st.nlink !== 1) { fs.closeSync(fd); throw C.inputError(`the egress audit ${file} is not a regular file with one link`, 'egress_audit_open'); }
   return fd;
 }
 
@@ -83,7 +78,7 @@ function tipOf(fd) {
 /**
  * Appends one chained line and returns it. Throws a typed input error (nothing appended) when the home tripwire holds, the
  * target is a symlink or not a regular file, the log ends in a partial line, or the write fails.
- * `r`: { repo, gate, mode, phase, round, lane, commit, input_sha256, diff_sha256?, model_pinned, now? }.
+ * `r`: { repo, gate, mode, phase, round, lane, commit, tree, content_sha256, input_sha256, feedback_sha256?, diff_sha256?, model_pinned, now? }.
  */
 function appendEgress(r) {
   OH.assertWritable();
@@ -94,7 +89,8 @@ function appendEgress(r) {
       const line = {
         ts: r.now || new Date().toISOString(), repo: r.repo, gate: r.gate, mode: r.mode, phase: r.phase, round: r.round,
         lane: r.lane === undefined ? null : r.lane, commit: r.commit === undefined ? null : r.commit,
-        input_sha256: r.input_sha256, diff_sha256: r.diff_sha256 === undefined ? null : r.diff_sha256, model_pinned: r.model_pinned, prev: tipOf(fd),
+        tree: r.tree === undefined ? null : r.tree, content_sha256: r.content_sha256 === undefined ? null : r.content_sha256,
+        input_sha256: r.input_sha256, feedback_sha256: r.feedback_sha256 === undefined ? null : r.feedback_sha256, diff_sha256: r.diff_sha256 === undefined ? null : r.diff_sha256, model_pinned: r.model_pinned, prev: tipOf(fd),
       };
       if (!validLine(line)) throw C.inputError('egress audit: line is off-format; nothing written', 'egress_audit_input');
       fs.fchmodSync(fd, FILE_MODE);
@@ -126,4 +122,13 @@ function verifyEgress(file) {
   return { ok: true, lines, why: null };
 }
 
-module.exports = { EGRESS_FILE, LOCK_FILE, LINE_KEYS, egressPath, appendEgress, verifyEgress };
+/** `xprov egress-verify`: read-only; exit 0 when the chain holds (or the file is absent), 1 with the reason when it is broken. */
+function cmdXprovEgressVerify(args) {
+  if (args && args.length) return C.usageExit('egress-verify', `takes no argument (got ${JSON.stringify(String(args[0]).slice(0, 80))})`);
+  const file = egressPath();
+  const v = verifyEgress(file);
+  process.stderr.write(`xprov egress-verify: ${v.ok ? `chain ok, ${v.lines.length} line(s)` : `BROKEN: ${v.why}`} (${file})\n`);
+  return C.emitJson({ ok: v.ok, lines: v.lines.length, reason: v.why, file }, v.ok ? X.EXIT_PASS : X.EXIT_FAIL, false);
+}
+
+module.exports = { cmdXprovEgressVerify, EGRESS_FILE, LOCK_FILE, LINE_KEYS, egressPath, appendEgress, verifyEgress };

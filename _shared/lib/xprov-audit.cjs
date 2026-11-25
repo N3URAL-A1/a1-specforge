@@ -30,6 +30,7 @@ const OH = require('./xprov-owner-home.cjs');
 
 const AUDIT_FILE = 'consent-audit.jsonl';
 const LOCK_FILE = '.consent-audit.lock';
+const EGRESS_LOCK_FILE = '.egress-audit.lock'; // taken by xprov-egress-audit.cjs through withLock; named here so a lock timeout says which log
 const STORE_LOCK_FILE = '.owner-store.lock'; // the read-modify-write of the owner stores; always taken BEFORE the audit lock, never inside it
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
@@ -155,11 +156,12 @@ function verifyLineOf(sha, repoKey, action, file) {
   return revoked ? verdict(STATE.BROKEN, 'a later revoke of this repository supersedes the audit line of the store entry') : verdict(STATE.OK);
 }
 
-function ensureHome() {
+/** The 0700 owner home (created when absent); `what` names the file in the refusal when the home is not a real directory. */
+function ensureHome(what) {
   const home = X.xprovHome();
   try { fs.mkdirSync(home, { mode: DIR_MODE }); } catch (e) { if (e.code !== 'EEXIST') throw e; } // a parallel first writer may win the race
   const st = fs.lstatSync(home);
-  if (st.isSymbolicLink() || !st.isDirectory()) throw C.inputError(`${home} is not a real directory; refusing to write the audit log`, 'audit_dir');
+  if (st.isSymbolicLink() || !st.isDirectory()) throw C.inputError(`${home} is not a real directory; refusing to write ${what || 'the audit log'}`, 'audit_dir');
   fs.chmodSync(home, DIR_MODE);
   return home;
 }
@@ -211,7 +213,8 @@ function lockedError(lockFile, lock, observed) {
   const store = lockFile === STORE_LOCK_FILE;
   const ageS = observed === null ? null : Math.round((Date.now() - observed.mtimeMs) / 1000);
   const age = ageS === null ? 'it was released as we gave up' : (ageS < 0 ? `its mtime lies ${-ageS} s in the future` : `held for ${ageS} s`);
-  return C.inputError(`the ${store ? 'owner stores are' : 'audit log is'} locked by another process (${store ? 'store lock' : 'audit lock'} ${lock}; ${age}; a lock older than ${LOCK_STALE_MS / 1000} s is taken over, a live one is waited for ${LOCK_WAIT_MS / 1000} s); nothing written`, store ? 'store_locked' : 'audit_locked');
+  const egress = lockFile === EGRESS_LOCK_FILE;
+  return C.inputError(`the ${store ? 'owner stores are' : (egress ? 'egress audit is' : 'audit log is')} locked by another process (${store ? 'store lock' : (egress ? 'egress audit lock' : 'audit lock')} ${lock}; ${age}; a lock older than ${LOCK_STALE_MS / 1000} s is taken over, a live one is waited for ${LOCK_WAIT_MS / 1000} s); nothing written`, store ? 'store_locked' : 'audit_locked');
 }
 
 /** Creates the lock as a hard link to a unique nonce file (atomic, fails with EEXIST while held). */
@@ -290,4 +293,4 @@ function appendAudit(o) {
   });
 }
 
-module.exports = { AUDIT_FILE, LOCK_FILE, STORE_LOCK_FILE, LINE_KEYS, STATE, ACTION, GRANT_ACTIONS, auditPath, readChain, verifyAudit, verifyLineOf, appendAudit, lineSha, withLock, withStoreLock, takeoverStale };
+module.exports = { AUDIT_FILE, LOCK_FILE, STORE_LOCK_FILE, EGRESS_LOCK_FILE, ensureHome, LINE_KEYS, STATE, ACTION, GRANT_ACTIONS, auditPath, readChain, verifyAudit, verifyLineOf, appendAudit, lineSha, withLock, withStoreLock, takeoverStale };

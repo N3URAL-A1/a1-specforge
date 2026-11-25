@@ -795,9 +795,15 @@ function writeReviewedRecord(ctx, runDir) {
  * → null when the line is written, else the sentence that refuses the spawn. Holds hashes and names, never contents. */
 function recordEgress(ctx) {
   try {
+    // The hashes come from the record inputProblem has just checked against the bytes on disk (a changed copy refuses the spawn).
+    const stale = inputProblem(ctx);
+    if (stale) return stale;
+    const inputs = storedInputHashes(ctx.snapshot);
     EGRESS.appendEgress({
-      repo: ctx.root, gate: ctx.gate, mode: ctx.mode, phase: ctx.phase, round: ctx.round, lane: ctx.lane, commit: ctx.scan.commit || null,
-      input_sha256: sha256(fs.readFileSync(ctx.plan)), diff_sha256: ctx.mode === 'inspect' ? ctx.diffSha || null : null, model_pinned: X.MODEL_PINNED,
+      repo: ctx.root, gate: ctx.gate, mode: ctx.mode, phase: ctx.phase, round: ctx.round, lane: ctx.lane,
+      commit: ctx.scan.commit || null, tree: ctx.scan.tree || null, content_sha256: ctx.scan.content_sha256 || null,
+      input_sha256: inputs.plan, feedback_sha256: ctx.feedback ? inputs.feedback : null,
+      diff_sha256: ctx.mode === 'inspect' ? ctx.diffSha || null : null, model_pinned: X.MODEL_PINNED,
     });
     return null;
   } catch (e) {
