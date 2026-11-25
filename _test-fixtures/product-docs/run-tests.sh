@@ -933,15 +933,22 @@ mk_workdir HEAL_WORK "a1-product-docs-heal"
 cp -R "$SC003_WORK/." "$HEAL_WORK/"
 HEAL_PDIR="$HEAL_WORK/docs/product"
 node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/^## Changelog\n\n/m,"## Changelog\n\n\n\n"))' "$HEAL_PDIR/ROADMAP.md"
+assert_true "f006-heal-precondition-extra-blank-lines-planted" "$(node -e 'process.stdout.write(require("fs").readFileSync(process.argv[1],"utf8").includes("## Changelog\n\n\n\n")?"true":"false")' "$HEAL_PDIR/ROADMAP.md")"
 OUT="$(node "$TOOLS" product changelog --entry "heal check" --why "F-006 heal" --dir "$HEAL_PDIR" 2>&1)"
 RC=$?
 assert_rc "f006-heal-changelog" 0 "$RC" "$OUT"
 assert_true "f006-heal-one-blank-line-under-heading" "$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(/^## Changelog\n\n- \*\*/m.test(t)?"true":"false")' "$HEAL_PDIR/ROADMAP.md")"
+# An indented intro line under the heading keeps its indentation (review of PR #133; red with intro = nonEntryPrefix.trim()).
+node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/^## Changelog\n\n/m,"## Changelog\n\n    indented intro\n\n"))' "$HEAL_PDIR/ROADMAP.md"
+OUT="$(node "$TOOLS" product changelog --entry "intro check" --why "F-006 intro" --dir "$HEAL_PDIR" 2>&1)"
+RC=$?
+assert_rc "f006-intro-changelog" 0 "$RC" "$OUT"
+assert_true "f006-intro-indentation-kept" "$(node -e 'process.stdout.write(/^## Changelog\n\n    indented intro\n\n- \*\*/m.test(require("fs").readFileSync(process.argv[1],"utf8"))?"true":"false")' "$HEAL_PDIR/ROADMAP.md")"
 node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/\r?\n/g,"\r\n"))' "$HEAL_PDIR/ROADMAP.md"
 OUT="$(node "$TOOLS" product changelog --entry "crlf check" --why "F-006 crlf" --dir "$HEAL_PDIR" 2>&1)"
 RC=$?
 assert_rc "f006-crlf-changelog" 0 "$RC" "$OUT"
-assert_true "f006-crlf-no-mixed-line-endings" "$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(!t.includes("\r")&&/^- \*\*\d{4}-\d{2}-\d{2}\*\* — crlf check/m.test(t)&&/^## Changelog\n\n- \*\*/m.test(t)?"true":"false")' "$HEAL_PDIR/ROADMAP.md")"
+assert_true "f006-crlf-no-mixed-line-endings" "$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(!t.includes("\r")&&/^- \*\*\d{4}-\d{2}-\d{2}\*\* — crlf check/m.test(t)&&/^## Changelog\n\n    indented intro\n\n- \*\*/m.test(t)?"true":"false")' "$HEAL_PDIR/ROADMAP.md")"
 
 echo "product-docs fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

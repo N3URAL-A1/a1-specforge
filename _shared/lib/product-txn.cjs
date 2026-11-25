@@ -54,7 +54,7 @@ function appendChangelogEntry(body, what, why) {
   }
 
   // Exactly one blank line under the heading (extra blank lines heal), then any intro text, then the entries.
-  const intro = nonEntryPrefix.trim();
+  const intro = nonEntryPrefix.replace(/^(?:[ \t]*\n)+/, '').trimEnd(); // leading blank lines go, indentation stays
   const newSection = `\n\n${intro ? `${intro}\n\n` : ''}${keptEntries.join('\n')}\n\n`;
   const newBody = `${before}${newSection}${after}`;
 
