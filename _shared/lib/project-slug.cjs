@@ -11,6 +11,7 @@ const { parseNestedFrontmatter } = require('./io.cjs');
 
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,100}$/;
 // Case-tolerant: checkout names (and fixture temp dirs) carry mixed case. Anything else (space, newline, leading dot) is not a name.
+// Known and accepted for now: on a case-insensitive filesystem `Foo` and `foo` name the same store file.
 const SAFE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/;
 
 /** @param {string} name @returns {string|null} `name` when it is a safe file/path segment, else null (never `.test(null)`) */

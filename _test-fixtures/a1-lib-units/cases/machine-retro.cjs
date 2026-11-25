@@ -15,6 +15,9 @@
 //   validGate on String(g.id) / String(g.verdict) (null-guarded) -> MR24a, MR24b, MR24d
 // Measured red 2026-11-25 (bug project-slug-source; delete the one `if (bad(<field>, ...)) throw refuse(...)` line in renderEntry):
 //   date check -> MR25a; spec check -> MR25b; pr check -> MR25c; issue-tag check -> MR25d; result check -> MR25e
+// Measured red (review round 1 of PR #130; mutation = the named production edit):
+//   drop the `typeof g.caught !== 'boolean'` refusal in renderEntry -> MR26a; drop the `typeof decision.required !== 'boolean'` refusal -> MR26b;
+//   findMachineRecord back to `!hasLine(head, ... prose_required: false)` (ignores a second prose_required line) -> MR26c
 //   any of them loosened to accept a newline (e.g. /m flag) -> the same case; MR25f is the green control (valid fields still render)
 
 const fs = require('fs');
@@ -328,6 +331,18 @@ for (const [label, nl] of [['CRLF', '\r\n'], ['CR', '\r'], ['LS', '\u2028'], ['N
   eq('MR25d an issue tag with a newline or a space: refused', [refused({ issues: ['ok', 'a\nb'] }), refused({ issues: ['a b'] })], ['refused', 'refused']);
   eq('MR25e a forged result: refused', [refused({ retro: { gates_fired: [], result: 'pass\nprose_required: false' } }), refused({ retro: { gates_fired: [], result: 'maybe' } })], ['refused', 'refused']);
   eq('MR25f valid fields still render, project keeps the unknown fallback', [refused({}), refused({ issues: ['voice-input'], retro: { gates_fired: [], result: 'fail' } }), /^project: unknown$/m.test(M.renderEntry({ ...base, project: 'My Repo' }))], ['rendered', 'rendered', true]);
+}
+
+// MR26 (review round 1) caught and decision.required are written raw too: refused unless strictly boolean; the reader is fail-closed.
+{
+  const base = { date: '2026-11-25', spec: 'fx-spec', pr: 7, project: 'p', retro: { gates_fired: [], result: 'pass' }, decision: { required: false, reasons: [] }, issues: [] };
+  const refused = (patch) => { try { M.renderEntry({ ...base, ...patch }); return 'rendered'; } catch (e) { return e.exit === 2 ? 'refused' : `threw ${e.message}`; } };
+  const g = (caught) => ({ gates_fired: [{ id: 'lint', verdict: 'pass', caught }], result: 'pass' });
+  eq('MR26a caught with a newline, a string or undefined: refused; true/false render', [refused({ retro: g('false\nprose_required: false') }), refused({ retro: g('true') }), refused({ retro: g(undefined) }), refused({ retro: g(true) }), refused({ retro: g(false) })], ['refused', 'refused', 'refused', 'rendered', 'rendered']);
+  eq('MR26b decision.required not a boolean: refused', [refused({ decision: { required: 'x\nprose_required: false', reasons: [] } }), refused({ decision: { required: 1, reasons: [] } }), refused({ decision: undefined })], ['refused', 'refused', 'refused']);
+  const two = entryOf('fx-spec', 7).replace(/^prose_required: .*$/m, 'prose_required: true\nprose_required: false');
+  eq('MR26c two prose_required lines: found, prose_required true (fail closed)', M.findMachineRecord({ store: mkStore('store26', two), spec: 'fx-spec', pr: 7 }), { found: true, prose_required: true });
+  eq('MR26d control: one prose_required: false line still reads false', M.findMachineRecord({ store: mkStore('store26d', entryOf('fx-spec', 7)), spec: 'fx-spec', pr: 7 }), { found: true, prose_required: false });
 }
 
 done();

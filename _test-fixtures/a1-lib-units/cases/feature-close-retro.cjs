@@ -211,4 +211,16 @@ const { appendGateLine } = require(path.join(LIB, 'gate-log.cjs'));
   check('FR10 the stored entry has project: unknown', /\nproject: unknown\n/.test(read(STORE(t)) || ''), read(STORE(t)));
 }
 
+// FR11 (review round 1) a checkout folder that is no safe name, with --spec given: the machine record is written with project: unknown and
+// the close warns; run record refuses the name, so the worktree exit then refuses (fail closed) with a hint naming the way out.
+// Measured red: dropping `project === null ||` at the warning in feature-close.cjs (the warning then never fires for a null name);
+// worktree.cjs without the null-slug branch (no ROADMAP/rename hint) -> the hint check.
+{
+  const t = build('fr11', { primary: 'Proj A' });
+  const r = close(t, [...ARGS, '--spec', t.spec]);
+  check('FR11 a warning names project: unknown', r.json && r.json.warnings.some((w) => /project: unknown/.test(w)), r.out);
+  check('FR11 the worktree exit is refused with a ROADMAP/rename hint, logs kept', r.rc !== 0 && r.json && r.json.reason === 'worktree_exit_refused' && /ROADMAP\.md/.test(r.json.detail) && exists(t.wt), r.out);
+  check('FR11 the stored entry has project: unknown', /\nproject: unknown\n/.test(read(STORE(t)) || ''), read(STORE(t)));
+}
+
 done();

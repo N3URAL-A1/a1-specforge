@@ -7,7 +7,8 @@
 //   projectSlug / repoProjectSlug return the basename without safeName()   -> PS1, PS2, PS3, PS5
 //   SAFE_NAME_RE tightened to lower case only (SLUG_RE)                    -> PS4
 //   SAFE_NAME_RE not exported                                              -> PS6
-//   the ROADMAP source or opts.slug bypasses safeName()                    -> PS7
+//   opts.slug bypasses safeName()                                          -> PS2 (a ROADMAP bypass is unobservable: roadmapProject already checks SLUG_RE)
+//   PS7 is a green control: the ROADMAP project and a valid opts.slug still win
 
 const fs = require('fs');
 const path = require('path');
