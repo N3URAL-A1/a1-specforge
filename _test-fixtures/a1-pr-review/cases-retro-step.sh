@@ -81,11 +81,20 @@ for v in 'a' 'a-b,c_d' 'a-,b_,c9'; do
   if [ "$rc" = "0" ] && [ "$(cat "$RST/log")" = "feature close --check-only --by fx-spec --pr 7 --issues $v" ]; then pass_case "RS9 issue tags '$v' accepted and passed through"
   else fail_case "RS9 issue tags '$v' rc=$rc log=$(cat "$RST/log")"; fi
 done
-# RS9b length and count are the CLI's check (ISSUES_RE): the real CLI refuses a 42-char tag and 21 tags with exit 2 before any work.
-L42="$(printf 'a%.0s' $(seq 1 42))"; N21="$(printf 'a,%.0s' $(seq 1 20))a"
-for v in "$L42" "$N21"; do
-  $CLI feature close --check-only --by fx-spec --pr 7 --issues "$v" >/dev/null 2>&1; rc=$?
-  if [ "$rc" = "2" ]; then pass_case "RS9b the CLI refuses issue tags of ${#v} characters with exit 2"; else fail_case "RS9b CLI rc=$rc for ${#v} characters"; fi
+# RS9b length and count are the CLI's check (ISSUES_RE): the real CLI refuses a 42-char tag and 21 tags with exit 2 before any work,
+# and passes a 41-char tag and 20 tags through the tag check (positive controls: no exit 2, no --issues usage message).
+L41="$(printf 'a%.0s' $(seq 1 41))"; N20="$(printf 'a,%.0s' $(seq 1 19))a"
+for c in "one tag of 42 characters:${L41}a" "21 tags:$N20,a"; do
+  v="${c#*:}"; $CLI feature close --check-only --by fx-spec --pr 7 --issues "$v" >/dev/null 2>&1; rc=$?
+  if [ "$rc" = "2" ]; then pass_case "RS9b the CLI refuses ${c%%:*} with exit 2"; else fail_case "RS9b CLI rc=$rc for ${c%%:*}"; fi
+done
+# The positive controls pin the step after parseArgs: --repo is a fixed non-git dir, so a passed tag check ends in rc=1 not_a_repo
+# (independent of cwd and vault); A1_GH_BIN is unset because a relative value from the caller exits 2 after parseArgs.
+mkdir -p "$RST/nogit"
+for c in "one tag of 41 characters:$L41" "20 tags:$N20"; do
+  v="${c#*:}"; out="$(env -u A1_GH_BIN $CLI feature close --check-only --by fx-spec --pr 7 --repo "$RST/nogit" --issues "$v" 2>/dev/null)"; rc=$?
+  if [ "$rc" = "1" ] && printf '%s' "$out" | grep -q '"reason":"not_a_repo"'; then pass_case "RS9b the CLI passes ${c%%:*} through the tag check (rc 1 not_a_repo)"
+  else fail_case "RS9b CLI on ${c%%:*}: rc=$rc out=$out"; fi
 done
 
 # RS10 (review fix round 1, R6) block T removes its RD temp file on the success path and on the check-only failure path (stub run
@@ -98,8 +107,12 @@ rs_tmp() { # $1 = RS_RC (stub exit code for --check-only) ; prints the count of 
   (cd "$RST" && TMPDIR="$RST/tmpd" RS_LOG="$RST/log" RS_EXIT="$1" bash "$RST/blk-tmp.sh" > "$RST/out" 2>&1)
   find "$RST/tmpd" -type f | wc -l | tr -d ' '
 }
-sed -i.bak 's#^require("fs").appendFileSync#if (process.env.RS_EXIT \&\& process.argv.includes("--check-only")) process.exit(Number(process.env.RS_EXIT));\nrequire("fs").appendFileSync#' "$RST/repo/_shared/a1-tools.cjs"
-if [ "$(rs_tmp "")" = "0" ]; then pass_case "RS10a block T leaves no temp file after a successful decision"; else fail_case "RS10a temp file left on the success path"; fi
+# Insert the RS_EXIT stub line with node, not sed: GNU sed reads \n in the replacement as a newline, BSD sed does not (audit F-006).
+node -e 'const fs=require("fs");const p=process.argv[1];const t=fs.readFileSync(p,"utf8");const i=t.search(/^require\("fs"\)\.appendFileSync/m);if(i<0)process.exit(3);fs.writeFileSync(p,t.slice(0,i)+"if (process.env.RS_EXIT && process.argv.includes(\"--check-only\")) process.exit(Number(process.env.RS_EXIT));\n"+t.slice(i))' "$RST/repo/_shared/a1-tools.cjs" \
+  || fail_case "RS10 stub line not inserted into the fixture a1-tools.cjs"
+# RS10a proves the success path ran (prose_required= printed), not only that no temp file is left.
+if [ "$(rs_tmp "")" = "0" ] && grep -qE '^prose_required=(true|false)$' "$RST/out"; then pass_case "RS10a block T leaves no temp file after a successful decision"
+else fail_case "RS10a success path did not run or left a temp file: $(cat "$RST/out")"; fi
 if [ "$(rs_tmp 3)" = "0" ] && grep -q 'STOP: feature close --check-only exit=3' "$RST/out"; then pass_case "RS10b block T leaves no temp file when --check-only fails"; else fail_case "RS10b temp file left on the failure path: $(cat "$RST/out")"; fi
 if node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const i=t.indexOf("PC_OUT=");const e=t.indexOf("```",i);const b=t.slice(i,e);process.exit(i>0&&/\nrm -f "\$PC_OUT"|\n *rm -f "\$PC_OUT"/.test(b)&&b.indexOf("rm -f")>b.indexOf("readFileSync")?0:1)' "$SK/a1-plan/workflows/04-audit.md"; then pass_case "RS10c the 04-audit.md permit-state block removes PC_OUT after the read"
 else fail_case "RS10c PC_OUT is never removed"; fi
