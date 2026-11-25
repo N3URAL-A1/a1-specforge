@@ -88,6 +88,13 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   last root key, '<pin> = false' lines to [features]; additive
                   only, a value a human set differently is refused (exit 1,
                   file unchanged).
+    egress-verify
+                  (xprov-egress-audit.cjs, audit F-001) read-only: checks the hash
+                  chain of ~/.a1-xprov/egress-audit.jsonl. Exit 0 when it holds
+                  (or the file is absent), 1 with the reason (line number) when it
+                  is broken; stdout { ok, lines, reason, file }. Tier 0: the same
+                  OS user can rewrite the whole file; truncation and deletion are
+                  not detectable.
     permit-check [--repo <git-toplevel>]
                   (xprov-permit.cjs, wave 4) reads .a1/xprov.json AND the owner's
                   stores ~/.a1-xprov/permit-denials.json and (spec 014)
@@ -531,6 +538,13 @@ ${CONSENT_HELP}
                   ~/.a1-xprov/allowlist-approvals.json (written only by
                   allowlist approve), ~/.a1-xprov/permit-denials.json (written
                   only by permit / permit --deny).
+                  ~/.a1-xprov/egress-audit.jsonl (0600, hash-chained, always on: one
+                  line per Codex runner spawn of xprov run, written before the
+                  spawn with gate, mode, phase, round, lane, the snapshot commit,
+                  tree and content_sha256, and the sha256 of the PLAN or doc copy
+                  sent and of the feedback copy (round 2); hashes only, no
+                  contents; a failed append refuses the spawn; never deleted by
+                  gc; check it with xprov egress-verify).
                   ENV: A1_XPROV_CODEX_HOME (optional; default ~/.codex-a1-review).
                   Fixture suite: _test-fixtures/a1-xprov/run-tests.sh (harness)
                   + parts/NN-<wave>.sh; runner fakes live in fake/, captured

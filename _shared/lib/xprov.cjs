@@ -56,6 +56,8 @@ const SUBCOMMANDS = Object.freeze({
   gc: Object.freeze({ module: 'xprov-artifacts.cjs', fn: 'cmdXprovGc', wave: 3 }),
   preflight: Object.freeze({ module: 'xprov-preflight.cjs', fn: 'cmdXprovPreflight', wave: 4 }),
   'init-home': Object.freeze({ module: 'xprov-preflight.cjs', fn: 'cmdXprovInitHome', wave: 4 }),
+  // Audit F-001: read-only check of the hash chain of ~/.a1-xprov/egress-audit.jsonl.
+  'egress-verify': Object.freeze({ module: 'xprov-egress-audit.cjs', fn: 'cmdXprovEgressVerify', wave: 4 }),
   'permit-check': Object.freeze({ module: 'xprov-permit.cjs', fn: 'cmdXprovPermitCheck', wave: 4 }),
   permit: Object.freeze({ module: 'xprov-permit.cjs', fn: 'cmdXprovPermit', wave: 4 }),
   // Read-only host-boundary prediction (bug 2026-10-28-handover-xprov-owner-store): the state a
