@@ -198,6 +198,15 @@ for entry in "${FIXED_FINDINGS[@]}"; do
     echo "audit-set failed for $finding: $OUT"
   fi
 done
+# A CRLF audit file is normalized to LF and updated (follow-up F-008 of 2026-11-25; red before the fix: exit 1,
+# "does not start with a '---' frontmatter block", file unchanged). Runs on a copy, so the 18-call scenario is untouched.
+CRLF_PDIR="$WORK1/crlf-product"; cp -R "$PDIR1" "$CRLF_PDIR"
+CRLF_AUDIT="$CRLF_PDIR/audits/$(basename "$AUDIT1")"
+node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/\r?\n/g,"\r\n"))' "$CRLF_AUDIT"
+crlf_first="${FIXED_FINDINGS[0]}"
+OUT="$(node "$TOOLS" product audit-set --audit "$CRLF_AUDIT" --finding "${crlf_first%%:*}" --status fixed --commit "${crlf_first##*:}" --dir "$CRLF_PDIR" 2>&1)"
+assert_rc "f008-crlf-audit-set" 0 "$?" "$OUT"
+assert_true "f008-crlf-written-lf-one-changelog" "$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(!t.includes("\r")&&(t.match(/^## Changelog/gm)||[]).length===1?"true":"false")' "$CRLF_AUDIT")"
 assert_true "sc001-all-18-audit-set-calls-succeeded" "$([[ $set_failures -eq 0 ]] && echo true || echo false)"
 # 18 audit-set runs on one file leave the changelog layout stable: exactly one blank line under the heading and never two
 # blank lines in a row (follow-up F-005 of 2026-11-25; red before the fix: one more blank line per run).
