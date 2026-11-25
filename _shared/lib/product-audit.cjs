@@ -400,12 +400,14 @@ function cmdProductAuditSet(args) {
   // prose body, so re-composing `---\n${fmBlockAfter}\n---\n${bodyAfter}`
   // below produces exactly ONE frontmatter block, not a duplicated one.
   const bodyBefore = restAfterFm.replace(/^\n---\n?/, '');
-  const changelogHeadingRe = /^## Changelog\s*$/m;
+  // [ \t]*, not \s*: \s would also eat the blank lines after the heading and add one more per run (follow-up F-005).
+  const changelogHeadingRe = /^## Changelog[ \t]*$/m;
   let bodyAfter;
   if (changelogHeadingRe.test(bodyBefore)) {
     const match = changelogHeadingRe.exec(bodyBefore);
     const insertAt = match.index + match[0].length;
-    bodyAfter = `${bodyBefore.slice(0, insertAt)}\n\n${changelogLine}${bodyBefore.slice(insertAt).replace(/^\n\n/, '')}`;
+    const rest = bodyBefore.slice(insertAt).replace(/^\n+/, '');
+    bodyAfter = `${bodyBefore.slice(0, insertAt)}\n\n${changelogLine}${rest ? `\n${rest}` : ''}`;
   } else {
     const sep = bodyBefore.endsWith('\n') ? '' : '\n';
     bodyAfter = `${bodyBefore}${sep}\n## Changelog\n\n${changelogLine}`;

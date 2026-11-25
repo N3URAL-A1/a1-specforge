@@ -199,6 +199,13 @@ for entry in "${FIXED_FINDINGS[@]}"; do
   fi
 done
 assert_true "sc001-all-18-audit-set-calls-succeeded" "$([[ $set_failures -eq 0 ]] && echo true || echo false)"
+# 18 audit-set runs on one file leave the changelog layout stable: exactly one blank line under the heading and never two
+# blank lines in a row (follow-up F-005 of 2026-11-25; red before the fix: one more blank line per run).
+assert_true "sc001-changelog-no-blank-line-growth" "$(node -e '
+  const t = require("fs").readFileSync(process.argv[1], "utf8");
+  const s = t.slice(t.indexOf("## Changelog\n"));
+  console.log(/^## Changelog\n\n- /.test(s) && !/\n\n\n/.test(s) ? "true" : "false");
+' "$AUDIT1")"
 
 # --all: niimo's pre-clarification precedent mirrored ALL 31 findings, not
 # just the open ones — this reproduction explicitly opts into --all to match
