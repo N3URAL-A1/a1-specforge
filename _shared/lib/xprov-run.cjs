@@ -792,13 +792,16 @@ function writeReviewedRecord(ctx, runDir) {
 }
 
 /** Audit before effect (audit F-001): one always-on chained line per runner spawn, independent of --no-log and the opt-in log.
- * → null when the line is written, else the sentence that refuses the spawn. Holds hashes and names, never contents. */
+ * → null when the line is written, else { reason, detail } that refuses the spawn (snapshot_failed for a changed or unreadable input copy, preflight_failed for an append failure). Holds hashes and names, never contents. */
 function recordEgress(ctx) {
+  // The hashes come from the record inputProblem has just checked against the bytes on disk (a changed copy refuses the spawn).
+  // A changed copy, or a re-check that throws, is snapshot_failed like the late check in runWithBaseline; only the append is preflight_failed.
+  let stale; let inputs;
+  try { stale = inputProblem(ctx); inputs = stale ? null : storedInputHashes(ctx.snapshot); } catch (e) {
+    return { reason: X.REASONS.snapshot_failed, detail: `the input copies could not be re-checked (${String((e && e.message) || e).slice(0, 300)})` };
+  }
+  if (stale) return { reason: X.REASONS.snapshot_failed, detail: stale };
   try {
-    // The hashes come from the record inputProblem has just checked against the bytes on disk (a changed copy refuses the spawn).
-    const stale = inputProblem(ctx);
-    if (stale) return stale;
-    const inputs = storedInputHashes(ctx.snapshot);
     EGRESS.appendEgress({
       repo: ctx.root, gate: ctx.gate, mode: ctx.mode, phase: ctx.phase, round: ctx.round, lane: ctx.lane,
       commit: ctx.scan.commit || null, tree: ctx.scan.tree || null, content_sha256: ctx.scan.content_sha256 || null,
@@ -807,7 +810,7 @@ function recordEgress(ctx) {
     });
     return null;
   } catch (e) {
-    return `the egress audit line could not be written (${(e && e.reason) || 'error'}: ${String((e && e.message) || e).slice(0, 300)})`;
+    return { reason: X.REASONS.preflight_failed, detail: `the egress audit line could not be written (${(e && e.reason) || 'error'}: ${String((e && e.message) || e).slice(0, 300)})` };
   }
 }
 
@@ -855,8 +858,8 @@ function runWithBaseline(ctx, artifactsDir, argv, notes) {
     }
     const egress = recordEgress(ctx);
     if (egress) {
-      process.stderr.write(`xprov run: ${egress}; refusing to spawn\n`);
-      return o.failWith(X.REASONS.preflight_failed, egress, null, false);
+      process.stderr.write(`xprov run: ${egress.detail}; refusing to spawn\n`);
+      return o.failWith(egress.reason, egress.detail, null, false);
     }
     const run = spawnRunner(argv, ctx, artifactsDir, runHome);
     const rawManifest = runHomeManifest(runHome);
