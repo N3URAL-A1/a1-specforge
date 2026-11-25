@@ -26,7 +26,7 @@ function appendChangelogEntry(body, what, why) {
   if (!match) {
     // No Changelog section yet — append one at the end of the body.
     const sep = body.endsWith('\n') ? '' : '\n';
-    return { body: `${body}${sep}\n## Changelog\n\n${line}\n`, archiveAppend: null };
+    return { body: `${body}${sep}\n## Changelog\n\n${line}\n`, archiveAppend: null, stray: null };
   }
 
   const startIdx = match.index + match[0].length;
@@ -39,7 +39,13 @@ function appendChangelogEntry(body, what, why) {
   const section = body.slice(startIdx, sectionEnd);
   const after = body.slice(sectionEnd);
 
-  const entryLines = section.split('\n').filter((l) => /^- \*\*\d{4}-\d{2}-\d{2}\*\* —/.test(l));
+  const ENTRY_RE = /^- \*\*\d{4}-\d{2}-\d{2}\*\* —/;
+  const sectionLines = section.split('\n');
+  const entryLines = sectionLines.filter((l) => ENTRY_RE.test(l));
+  // The rebuild keeps the intro and the entries only: a written line after the first entry would be lost (follow-up F-009).
+  const firstEntry = sectionLines.findIndex((l) => ENTRY_RE.test(l));
+  const stray = firstEntry === -1 ? null : sectionLines.slice(firstEntry).find((l) => l.trim() !== '' && !ENTRY_RE.test(l)) || null;
+  if (stray !== null) return { body, archiveAppend: null, stray };
   const nonEntryPrefix = section.slice(0, section.indexOf(entryLines[0] || '') === -1 ? section.length : section.indexOf(entryLines[0]));
 
   const updatedEntries = [...entryLines, line];
@@ -58,7 +64,7 @@ function appendChangelogEntry(body, what, why) {
   const newSection = `\n\n${intro ? `${intro}\n\n` : ''}${keptEntries.join('\n')}\n\n`;
   const newBody = `${before}${newSection}${after}`;
 
-  return { body: newBody, archiveAppend };
+  return { body: newBody, archiveAppend, stray: null };
 }
 
 
@@ -113,7 +119,13 @@ function derivedWrites(dir, derived, lockPath) {
  * { writes, roadmapContent } for the caller to push onto its own writes[]
  * (e.g. feature.md, reservations.json) before calling writeAllOrNothing. */
 function buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, what, why, lockPath) {
-  const { body: bodyWithEntry, archiveAppend } = appendChangelogEntry(roadmapBody, what, why);
+  const { body: bodyWithEntry, archiveAppend, stray } = appendChangelogEntry(roadmapBody, what, why);
+  if (stray !== null) {
+    const msg = `product: ROADMAP.md "## Changelog" has a line that is not an entry after the first entry (${JSON.stringify(stray.slice(0, 120))}); ` +
+      'the rewrite would drop it. Move it above the first entry or remove it, then run the command again.';
+    if (lockPath) failWithLock(lockPath, msg);
+    else fail(msg);
+  }
   const derived = regenerateDerived(dir, updatedRoadmapFm);
 
   const roadmapFmStr = serializeNestedFrontmatter(updatedRoadmapFm, PRODUCT_ROADMAP_KEY_ORDER);

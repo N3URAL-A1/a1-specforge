@@ -950,5 +950,24 @@ RC=$?
 assert_rc "f006-crlf-changelog" 0 "$RC" "$OUT"
 assert_true "f006-crlf-no-mixed-line-endings" "$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");process.stdout.write(!t.includes("\r")&&/^- \*\*\d{4}-\d{2}-\d{2}\*\* — crlf check/m.test(t)&&/^## Changelog\n\n    indented intro\n\n- \*\*/m.test(t)?"true":"false")' "$HEAL_PDIR/ROADMAP.md")"
 
+# --- F-009 (follow-up 2026-11-25): a written line after the first changelog entry is never dropped silently:
+# the writer refuses and leaves ROADMAP.md as it was. Measured red: without the stray check in appendChangelogEntry()
+# (product-txn.cjs) the command exits 0 and the footer line is gone.
+mk_workdir STRAY_WORK "a1-product-docs-stray"
+cp -R "$SC003_WORK/." "$STRAY_WORK/"
+STRAY_PDIR="$STRAY_WORK/docs/product"
+printf '\nfooter note kept by hand\n' >> "$STRAY_PDIR/ROADMAP.md"
+STRAY_HASH="$(hash_file "$STRAY_PDIR/ROADMAP.md")"
+OUT="$(node "$TOOLS" product changelog --entry "stray check" --why "F-009" --dir "$STRAY_PDIR" 2>&1)"
+RC=$?
+assert_rc "f009-stray-line-refused" 1 "$RC" "$OUT"
+assert_true "f009-stray-line-named" "$(echo "$OUT" | grep -q 'footer note kept by hand' && echo true || echo false)"
+assert_true "f009-roadmap-unchanged" "$([[ "$(hash_file "$STRAY_PDIR/ROADMAP.md")" == "$STRAY_HASH" ]] && echo true || echo false)"
+# Moving the line above the first entry (intro) lets the next write through and keeps it.
+node -e 'const fs=require("fs");const f=process.argv[1];let t=fs.readFileSync(f,"utf8").replace("\nfooter note kept by hand\n","");fs.writeFileSync(f,t.replace(/^## Changelog\n\n/m,"## Changelog\n\nfooter note kept by hand\n\n"))' "$STRAY_PDIR/ROADMAP.md"
+OUT="$(node "$TOOLS" product changelog --entry "stray check" --why "F-009" --dir "$STRAY_PDIR" 2>&1)"
+assert_rc "f009-intro-line-passes" 0 "$?" "$OUT"
+assert_true "f009-intro-line-kept" "$(grep -q '^footer note kept by hand$' "$STRAY_PDIR/ROADMAP.md" && echo true || echo false)"
+
 echo "product-docs fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
