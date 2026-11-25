@@ -178,5 +178,18 @@ node -e 'const fs = require("fs"); const f = process.argv[1]; const l = fs.readF
 ev42; assert_eq "EV2 an edited first line: exit 1, reason names line 2" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + /line 2/.test(j.reason)")" "1/false/true"
 rm -f "$(EGRESS42)"; ev42; assert_eq "EV3 absent file: exit 0, lines 0" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.lines")" "0/true/0"
 
+# EA10: commit and tree are git object ids (40 or 64 hex) or null (follow-up F-004). Mutation: validLine checks them as nullable text.
+ea10() { HOME="$HOME" node -e '
+  const E = require(process.argv[1] + "/_shared/lib/xprov-egress-audit.cjs");
+  const r = { repo: "r", gate: "g", mode: "review", phase: "p", round: 1, input_sha256: "0".repeat(64), model_pinned: "m", commit: process.argv[2], tree: process.argv[3] };
+  try { E.appendEgress(r); console.log("appended"); } catch (e) { console.log(e.reason); }' "$TREE" "$1" "$2" 2>&1; }
+rm -f "$(EGRESS42)"
+assert_eq "EA10 an off-format tree is refused" "$(ea10 "$(printf 'a%.0s' {1..40})" not-a-git-id)" "egress_audit_input"
+assert_eq "EA10 an off-format commit is refused" "$(ea10 "$(printf 'A%.0s' {1..40})" "$(printf 'b%.0s' {1..40})")" "egress_audit_input"
+assert_eq "EA10 a 41-hex tree is refused (anchors, sha1 length)" "$(ea10 "$(printf 'a%.0s' {1..40})" "$(printf 'b%.0s' {1..41})")" "egress_audit_input"
+assert_eq "EA10 a 65-hex commit is refused (sha256 length is exact)" "$(ea10 "$(printf 'a%.0s' {1..65})" "$(printf 'b%.0s' {1..40})")" "egress_audit_input"
+assert_eq "EA10 sha1 commit and sha256 tree are accepted" "$(ea10 "$(printf 'a%.0s' {1..40})" "$(printf 'b%.0s' {1..64})")" "appended"
+assert_eq "EA10 only the accepted line was written" "$(lines42)" "1"
+
 export HOME="$SAVED_HOME_42"
 rm -rf "$TMP42"
