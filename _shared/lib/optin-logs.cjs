@@ -1,9 +1,11 @@
 'use strict';
 
 // optin-logs — the opt-in switch for the audit files a default run does not need (spec 027 slice 5, FR-032, D9).
-// Scope: PLAN-REVIEW-LOG.md only. The `*.last-run.json` files all have a reader and stay always-on; the self-repair trail
+// Scope: the single file in OPTIN_FILES. The `*.last-run.json` files all have a reader and stay always-on; the self-repair trail
 // is written to the observation line (`recovery`), never to this log. `bin/check-optin-readers.cjs` lists the readers of a
 // candidate file name: a line that names it is a reader unless a MENTIONS_ALLOWED entry matches that very line.
+// Limit: that scan is literal. A reader that reaches the file through a constant (a path built from LOG_FILE) is not seen;
+// the writer constants are pinned by their own entries below instead.
 
 const OPTIN_ENV = 'A1_KEEP_REVIEW_LOGS';
 
@@ -20,13 +22,14 @@ const entry = (file, contains, reason) => Object.freeze({ file, contains, reason
 /**
  * Line-exact allowlist of lines that name an opt-in file without reading it. `contains` is an exact substring (at least 20
  * characters, unique in that file, measured on the final text); a mention passes only when its file matches and the line
- * holds it. No whole-file entries.
+ * holds it. No whole-file entries. `bin/check-optin-readers.cjs` enforces this: a shorter `contains` is a contract violation,
+ * an entry covers exactly one line (a second line with the same text is a reader), an entry that covers no line is stale.
+ * Not covered (literal scan): a reader through a constant such as LOG_FILE.
  * @type {ReadonlyArray<{file: string, contains: string, reason: string}>}
  */
 const MENTIONS_ALLOWED = Object.freeze([
   entry('_shared/lib/xprov-run.cjs', 'a1 writes PLAN-REVIEW-LOG.md itself', 'writer comment'),
   entry('_shared/lib/xprov-run.cjs', "const LOG_FILE = 'PLAN-REVIEW-LOG.md';", 'writer constant'),
-  entry('_shared/lib/xprov-run.cjs', "const LOG_HEADER = '# PLAN-REVIEW-LOG", 'writer constant'),
   entry('_shared/lib/xprov-run.cjs', 'log (a1 owns PLAN-REVIEW-LOG.md)', 'writer section comment'),
   entry('_shared/lib/xprov-gate.cjs', '.a1/phases/<name>/PLAN-REVIEW-LOG.md naming the step and', 'writer comment'),
   entry('_shared/lib/xprov-gate.cjs', "const LOG_FILE = 'PLAN-REVIEW-LOG.md';", 'writer constant'),

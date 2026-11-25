@@ -6,6 +6,7 @@
 #   OL4  bin/check-optin-readers.cjs on the real tree: exit 0         OL5  a planted agent line naming the file: exit 1
 #   OL6  .last-run.json has readers (04b, 01-load)                    OL7  self-repair with the log off: the observation holds `recovery`
 #   OL8  line-exact allowlist (an extra line in help-xprov.cjs reads) OL9  buildObservation rejects an unknown recovery action
+#   OL12-OL16 allowlist contract: duplicate line, widened scan, stale entry, optin-logs.cjs itself, contains < 20
 #   OL10 compactRecovery is total, bounded and leaks nothing          OL11 compactRecovery keeps `fallback`
 # Helpers are copied from parts 06 and 29 (a part must run alone in its shard).
 
@@ -53,7 +54,7 @@ prep40; gate40 yes "[$OK40]" --gate "$GATE_PLAN"
 
 # OL4-OL6, OL8: the reader check
 node "$CHECK40" --name PLAN-REVIEW-LOG.md > "$TMP40/rd.json" 2>"$TMP40/rd.err"; assert_rc "OL4 check-optin-readers: no reader of PLAN-REVIEW-LOG.md on the real tree" 0 "$?" "$(head -c 400 "$TMP40/rd.json")"
-cp_tree40() { local d="$1"; mkdir -p "$d/skills" "$d/agents" "$d/_shared"; cp -R "$REPO_ROOT/skills/." "$d/skills/"; cp -R "$REPO_ROOT/agents/." "$d/agents/"; cp -R "$REPO_ROOT/_shared/lib" "$d/_shared/lib"; }
+cp_tree40() { local d="$1"; mkdir -p "$d/skills" "$d/agents" "$d/_shared" "$d/bin" "$d/hooks"; cp -R "$REPO_ROOT/skills/." "$d/skills/"; cp -R "$REPO_ROOT/agents/." "$d/agents/"; cp -R "$REPO_ROOT/_shared/lib" "$d/_shared/lib"; cp "$REPO_ROOT/_shared/a1-tools.cjs" "$d/_shared/a1-tools.cjs"; cp -R "$REPO_ROOT/bin/." "$d/bin/"; cp -R "$REPO_ROOT/hooks/." "$d/hooks/"; }
 cp_tree40 "$TMP40/plant1"; af40="$(ls "$TMP40/plant1/agents"/*.md | head -1)"; printf 'Read PLAN-REVIEW-LOG.md for the history.\n' >> "$af40"
 node "$CHECK40" --name PLAN-REVIEW-LOG.md --root "$TMP40/plant1" > "$TMP40/rd5.json" 2>/dev/null; rc40=$?
 assert_rc "OL5 a planted agent line naming the file" 1 "$rc40"
@@ -66,6 +67,124 @@ node "$CHECK40" --name PLAN-REVIEW-LOG.md --root "$TMP40/plant2" > "$TMP40/rd8.j
 assert_rc "OL8 an extra mention line in help-xprov.cjs is a reader (line-exact allowlist)" 1 "$rc40"
 assert_json "OL8 readers[0].file is _shared/lib/help-xprov.cjs" "$(cat "$TMP40/rd8.json")" "j.readers[0].file" "_shared/lib/help-xprov.cjs"
 node "$CHECK40" >/dev/null 2>&1; assert_rc "OL4 usage: no --name is exit 2" 2 "$?"
+
+# OL12-OL16: the allowlist contract (bug 2026-11-25-optin-allowlist-contract, audit F-002)
+OLNAME40=PLAN-REVIEW-LOG.md
+# run40 <root> <tag> — one check run on a planted copy; sets rc40 and $TMP40/<tag>.json
+run40() { node "$CHECK40" --name "$OLNAME40" --root "$1" > "$TMP40/$2.json" 2>/dev/null; rc40=$?; }
+# OL12: a second line holding an allowed `contains` is a reader (1:1 count)
+cp_tree40 "$TMP40/plant12"; printf "const x = readFileSync(dir + 'PLAN-REVIEW-LOG.md'); // a1 writes PLAN-REVIEW-LOG.md itself\n" >> "$TMP40/plant12/_shared/lib/xprov-run.cjs"
+run40 "$TMP40/plant12" rd12; assert_rc "OL12 a duplicate line holding an allowed contains is a reader" 1 "$rc40"
+assert_json "OL12 exactly one reader, in xprov-run.cjs" "$(cat "$TMP40/rd12.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/xprov-run.cjs"
+cp_tree40 "$TMP40/plant12b"; printf '// a1 writes PLAN-REVIEW-LOG.md itself\n' >> "$TMP40/plant12b/_shared/lib/xprov-run.cjs"
+run40 "$TMP40/plant12b" rd12b; assert_rc "OL12b an exact duplicate of an allowed line is a reader" 1 "$rc40"
+assert_json "OL12b the reader names the line that took the entry (duplicate_of)" "$(cat "$TMP40/rd12b.json")" "typeof j.readers[0].duplicate_of + '|' + (j.readers[0].duplicate_of < j.readers[0].line)" "number|true"
+# OL13: a reader is found in every scanned root and extension (SCAN_ROOTS x SCAN_EXTS), through symlinks, and in an executable without extension
+cp_tree40 "$TMP40/plant13"; P13="$TMP40/plant13"
+mkdir -p "$P13/skills/a1-plan/scripts" "$P13/_extras/x" "$P13/.github/workflows" "$P13/packs" "$TMP40/outside13" "$P13/_shared/vendor" "$P13/_shared/node_modules"
+LINE13='cat PLAN-REVIEW-LOG.md'
+PLANTED13="_shared/a1-tools.cjs bin/run-suites.sh hooks/xprov-consent-hook.cjs hooks/hooks.json skills/a1-plan/scripts/plant.sh _shared/lib/plant.js _shared/lib/plant.mjs packs/README.md _extras/x/plant.yml .github/workflows/plant.yaml bin/plant.toml bin/plant.html bin/plant.plist bin/plant-exec skills/linkdir/plant.md agents/linkfile.md"
+for f13 in _shared/a1-tools.cjs bin/run-suites.sh hooks/xprov-consent-hook.cjs hooks/hooks.json skills/a1-plan/scripts/plant.sh _shared/lib/plant.js _shared/lib/plant.mjs packs/README.md _extras/x/plant.yml .github/workflows/plant.yaml bin/plant.toml bin/plant.html bin/plant.plist bin/plant-exec; do printf '%s\n' "$LINE13" >> "$P13/$f13"; done
+chmod +x "$P13/bin/plant-exec"
+printf '%s\n' "$LINE13" > "$TMP40/outside13/plant.md"; ln -s "$TMP40/outside13" "$P13/skills/linkdir"; ln -s "$TMP40/outside13/plant.md" "$P13/agents/linkfile.md"; ln -s .. "$P13/skills/loop13"
+printf '%s\n' "$LINE13" > "$P13/_shared/vendor/skip.md"; printf '%s\n' "$LINE13" > "$P13/_shared/node_modules/skip.md"; printf '%s\n' "$LINE13" > "$P13/bin/plain.txt"
+run40 "$P13" rd13; assert_rc "OL13 planted readers in every root and extension" 1 "$rc40"
+for f13 in $PLANTED13; do assert_json "OL13 $f13 is reported" "$(cat "$TMP40/rd13.json")" "j.readers.some((r) => r.file === '$f13')" "true"; done
+assert_json "OL13 a symlink loop is cut at the first repeat (no path walks loop13 twice)" "$(cat "$TMP40/rd13.json")" "j.readers.some((r) => /loop13.*loop13/.test(r.file))" "false"
+assert_json "OL13 vendor/, node_modules/ and a .txt file are not scanned" "$(cat "$TMP40/rd13.json")" "j.readers.some((r) => ['_shared/vendor/skip.md', '_shared/node_modules/skip.md', 'bin/plain.txt'].includes(r.file))" "false"
+# OL14: an entry that matches no line is stale
+cp_tree40 "$TMP40/plant14"; node -e '
+  const fs = require("fs"); const f = process.argv[1];
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").split("\n").filter((l) => !l.includes("a1 writes PLAN-REVIEW-LOG.md itself") || l.includes("entry(")).join("\n"));
+' "$TMP40/plant14/_shared/lib/xprov-run.cjs"
+run40 "$TMP40/plant14" rd14; assert_rc "OL14 a stale allowlist entry fails the check" 1 "$rc40"
+assert_json "OL14 stale lists the entry and readers is empty" "$(cat "$TMP40/rd14.json")" "j.stale.length + '|' + j.stale[0].file + '|' + j.readers.length" "1|_shared/lib/xprov-run.cjs|0"
+# OL15: a reader line inside optin-logs.cjs is found (no whole-file skip); the definition lines stay allowed
+cp_tree40 "$TMP40/plant15"; printf "// read PLAN-REVIEW-LOG.md here\n" >> "$TMP40/plant15/_shared/lib/optin-logs.cjs"
+run40 "$TMP40/plant15" rd15; assert_rc "OL15 a reader line in optin-logs.cjs" 1 "$rc40"
+assert_json "OL15 exactly one reader, in optin-logs.cjs" "$(cat "$TMP40/rd15.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/optin-logs.cjs"
+# OL16: a contains shorter than 20 characters is a contract violation
+cp_tree40 "$TMP40/plant16"; node -e '
+  const fs = require("fs"); const f = process.argv[1];
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("a1 writes PLAN-REVIEW-LOG.md itself", "PLAN-REVIEW-LOG.md"));
+' "$TMP40/plant16/_shared/lib/optin-logs.cjs"
+run40 "$TMP40/plant16" rd16; assert_rc "OL16 a contains under 20 characters fails the check" 1 "$rc40"
+assert_json "OL16 one contract violation" "$(cat "$TMP40/rd16.json")" "j.contract_violations.length" "1"
+# OL15b-d: only the full canonical definition line is exempt; a reader behind an entry( or OPTIN_FILES prefix is found
+cp_tree40 "$TMP40/plant15b"; printf "entry('x', 'y', 'z'); function loadLog() { return require('fs').readFileSync('PLAN-REVIEW-LOG.md'); }\n" >> "$TMP40/plant15b/_shared/lib/optin-logs.cjs"
+run40 "$TMP40/plant15b" rd15b; assert_rc "OL15b a reader after an entry( prefix" 1 "$rc40"
+assert_json "OL15b one reader in optin-logs.cjs" "$(cat "$TMP40/rd15b.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/optin-logs.cjs"
+cp_tree40 "$TMP40/plant15c"; node -e '
+  const fs = require("fs"); const f = process.argv[1];
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("Object.freeze([\x27PLAN-REVIEW-LOG.md\x27]);", "Object.freeze([\x27PLAN-REVIEW-LOG.md\x27]); function loadLog() { return require(\x27fs\x27).readFileSync(\x27PLAN-REVIEW-LOG.md\x27); }"));
+' "$TMP40/plant15c/_shared/lib/optin-logs.cjs"
+run40 "$TMP40/plant15c" rd15c; assert_rc "OL15c a reader after an OPTIN_FILES prefix" 1 "$rc40"
+assert_json "OL15c one reader in optin-logs.cjs" "$(cat "$TMP40/rd15c.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/optin-logs.cjs"
+cp_tree40 "$TMP40/plant15d"; node -e '
+  const fs = require("fs"); const f = process.argv[1];
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("]);\n\nmodule.exports", "  entry(\x27skills/a1-plan/SKILL.md\x27, \x27PLAN-REVIEW-LOG.md reader\x27, require(\x27fs\x27).existsSync(\x27x\x27) ? \x27a\x27 : \x27b\x27),\n]);\n\nmodule.exports"));
+' "$TMP40/plant15d/_shared/lib/optin-logs.cjs"
+run40 "$TMP40/plant15d" rd15d; assert_rc "OL15d an entry( line that calls code" 1 "$rc40"
+assert_json "OL15d one reader in optin-logs.cjs" "$(cat "$TMP40/rd15d.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/optin-logs.cjs"
+cp_tree40 "$TMP40/plant15e"; printf "/*\n  entry('skills/a1-plan/SKILL.md', 'never loaded entry text', 'PLAN-REVIEW-LOG.md'),\n*/\n" >> "$TMP40/plant15e/_shared/lib/optin-logs.cjs"
+run40 "$TMP40/plant15e" rd15e; assert_rc "OL15e a canonical-looking entry( line that is not a loaded entry" 1 "$rc40"
+assert_json "OL15e one reader in optin-logs.cjs" "$(cat "$TMP40/rd15e.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/optin-logs.cjs"
+ENTRYLINE40="  entry('_shared/lib/xprov-run.cjs', 'a1 writes PLAN-REVIEW-LOG.md itself', 'writer comment'),"
+# swap40 <tag> <from> <to> — copy the tree, replace the first occurrence of <from> in its optin-logs.cjs
+swap40() { cp_tree40 "$TMP40/$1"; node -e '
+  const fs = require("fs"); const f = process.argv[1]; const s = fs.readFileSync(f, "utf8");
+  if (!s.includes(process.argv[2])) { console.error("swap40: pattern missing"); process.exit(3); }
+  fs.writeFileSync(f, s.replace(process.argv[2], () => process.argv[3]));
+' "$TMP40/$1/_shared/lib/optin-logs.cjs" "$2" "$3" || bad "swap40 $1: pattern missing"; }
+swap40 plant15f "$ENTRYLINE40" "$ENTRYLINE40 // reads PLAN-REVIEW-LOG.md here"
+run40 "$TMP40/plant15f" rd15f; assert_rc "OL15f a reader after a full canonical entry( line" 1 "$rc40"
+assert_json "OL15f one reader in optin-logs.cjs" "$(cat "$TMP40/rd15f.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/optin-logs.cjs"
+swap40 plant15g "$ENTRYLINE40" "  /* PLAN-REVIEW-LOG.md */ ${ENTRYLINE40#  }"
+run40 "$TMP40/plant15g" rd15g; assert_rc "OL15g a reader before a canonical entry( line" 1 "$rc40"
+assert_json "OL15g one reader in optin-logs.cjs" "$(cat "$TMP40/rd15g.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/optin-logs.cjs"
+cp_tree40 "$TMP40/plant15h"; printf "/*\nconst OPTIN_FILES = Object.freeze(['PLAN-REVIEW-LOG.md', 'ELSE.md']);\n*/\n" >> "$TMP40/plant15h/_shared/lib/optin-logs.cjs"
+run40 "$TMP40/plant15h" rd15h; assert_rc "OL15h an OPTIN_FILES line whose value is not the loaded one" 1 "$rc40"
+assert_json "OL15h one reader in optin-logs.cjs" "$(cat "$TMP40/rd15h.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/optin-logs.cjs"
+# OL16b: the length boundary is exactly 20
+cp_tree40 "$TMP40/plant16b"; node -e '
+  const fs = require("fs"); const f = process.argv[1];
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("a1 writes PLAN-REVIEW-LOG.md itself", process.argv[2]));
+' "$TMP40/plant16b/_shared/lib/optin-logs.cjs" "xPLAN-REVIEW-LOG.md"
+run40 "$TMP40/plant16b" rd16b; assert_json "OL16b 19 characters: one contract violation" "$(cat "$TMP40/rd16b.json")" "j.contract_violations.length" "1"
+cp_tree40 "$TMP40/plant16c"; node -e '
+  const fs = require("fs"); const f = process.argv[1];
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace("a1 writes PLAN-REVIEW-LOG.md itself", process.argv[2]));
+' "$TMP40/plant16c/_shared/lib/optin-logs.cjs" "xxPLAN-REVIEW-LOG.md"
+run40 "$TMP40/plant16c" rd16c; assert_json "OL16b 20 characters: no contract violation" "$(cat "$TMP40/rd16c.json")" "j.contract_violations.length" "0"
+# OL17: a reader appended to an allowed line does not hide behind the entry (every occurrence of the name lies inside the contains span)
+cp_tree40 "$TMP40/plant17"; node -e '
+  const fs = require("fs"); const f = process.argv[1];
+  fs.writeFileSync(f, fs.readFileSync(f, "utf8").split("\n").map((l) => (l.includes("a1 writes PLAN-REVIEW-LOG.md itself") && !l.includes("entry(") ? l + " readFileSync(\"PLAN-REVIEW-LOG.md\");" : l)).join("\n"));
+' "$TMP40/plant17/_shared/lib/xprov-run.cjs"
+run40 "$TMP40/plant17" rd17; assert_rc "OL17 a reader appended to an allowed line" 1 "$rc40"
+assert_json "OL17 that line is a reader" "$(cat "$TMP40/rd17.json")" "j.readers.length + '|' + j.readers[0].file" "1|_shared/lib/xprov-run.cjs"
+# OL18: a second OPTIN_FILES name does not make the entries of the first stale (and the other way round)
+cp_tree40 "$TMP40/plant18"; node -e '
+  const fs = require("fs"); const f = process.argv[1];
+  const src = fs.readFileSync(f, "utf8")
+    .replace("Object.freeze([\x27PLAN-REVIEW-LOG.md\x27])", "Object.freeze([\x27PLAN-REVIEW-LOG.md\x27, \x27OTHER-LOG.md\x27])")
+    .replace("]);\n\nmodule.exports", "  entry(\x27skills/a1-plan/SKILL.md\x27, \x27a note about OTHER-LOG.md here\x27, \x27second name\x27),\n]);\n\nmodule.exports");
+  fs.writeFileSync(f, src);
+' "$TMP40/plant18/_shared/lib/optin-logs.cjs"
+printf 'a note about OTHER-LOG.md here\n' >> "$TMP40/plant18/skills/a1-plan/SKILL.md"
+run40 "$TMP40/plant18" rd18; assert_json "OL18 first name: rc 0 and no stale entry" "$(cat "$TMP40/rd18.json")" "j.readers.length + '|' + j.stale.length" "0|0"; assert_rc "OL18 first name exits 0" 0 "$rc40"
+node "$CHECK40" --name OTHER-LOG.md --root "$TMP40/plant18" > "$TMP40/rd18b.json" 2>/dev/null; rc40=$?
+assert_rc "OL18 second name exits 0" 0 "$rc40"; assert_json "OL18 second name: no reader, no stale" "$(cat "$TMP40/rd18b.json")" "j.readers.length + '|' + j.stale.length" "0|0"
+# OL19: the loaded allowlist is validated (exit 2) and the JSON names which one was used
+for v19 in "a|OPTIN_FILES: ['PLAN-REVIEW-LOG.md'], MENTIONS_ALLOWED: {}" "b|OPTIN_FILES: 'PLAN-REVIEW-LOG.md', MENTIONS_ALLOWED: []" "c|OPTIN_FILES: [], MENTIONS_ALLOWED: [null]"; do
+  cp_tree40 "$TMP40/plant19${v19%%|*}"; printf "module.exports = { %s };\n" "${v19#*|}" > "$TMP40/plant19${v19%%|*}/_shared/lib/optin-logs.cjs"
+  run40 "$TMP40/plant19${v19%%|*}" rd19; assert_rc "OL19${v19%%|*} a malformed allowlist module is exit 2" 2 "$rc40"
+done
+cp_tree40 "$TMP40/plant19b"; rm -f "$TMP40/plant19b/_shared/lib/optin-logs.cjs"
+run40 "$TMP40/plant19b" rd19b; assert_json "OL19 a root without optin-logs.cjs uses the fallback" "$(cat "$TMP40/rd19b.json")" "j.allowlist" "fallback"
+assert_json "OL19 the real tree uses the root allowlist" "$(cat "$TMP40/rd.json")" "j.allowlist" "root"
+# OL4b: the real tree reports no stale entry and no violation
+assert_json "OL4 real tree: stale and contract_violations are empty" "$(cat "$TMP40/rd.json")" "j.stale.length + '|' + j.contract_violations.length" "0|0"
 
 # OL7: self-repair with the log off — the observation line carries `recovery`, no log file is written
 prep40; gate40 unset "[$NET40,$OK40]" --gate "$GATE_PLAN"
