@@ -293,7 +293,8 @@ function cmdProductAuditSet(args) {
     }
   }
 
-  const auditContentBefore = fs.readFileSync(auditFile, 'utf8');
+  // CRLF -> LF on read, like parseNestedFrontmatter: the '---' bounding below and the rewrite assume LF (follow-up F-008).
+  const auditContentBefore = fs.readFileSync(auditFile, 'utf8').replace(/\r\n/g, '\n');
   const { fm: auditFm } = parseNestedFrontmatter(auditContentBefore);
   const findings = Array.isArray(auditFm.findings) ? auditFm.findings : [];
   const findingIdx = findings.findIndex((f) => f.id === flags.finding);
