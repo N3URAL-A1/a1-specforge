@@ -21,7 +21,7 @@ function appendChangelogEntry(body, what, why) {
   const today = nowIso().slice(0, 10);
   const line = `- **${today}** — ${what} — ${why}`;
 
-  const headingRe = /^## Changelog\s*$/m;
+  const headingRe = /^## Changelog[ \t]*$/m; // [ \t]*, not \s*: the match must end on the heading line
   const match = headingRe.exec(body);
   if (!match) {
     // No Changelog section yet — append one at the end of the body.
@@ -53,7 +53,9 @@ function appendChangelogEntry(body, what, why) {
     archiveAppend = overflow.join('\n') + '\n';
   }
 
-  const newSection = `${nonEntryPrefix.trimEnd() ? nonEntryPrefix.trimEnd() + '\n\n' : '\n'}${keptEntries.join('\n')}\n\n`;
+  // Exactly one blank line under the heading (extra blank lines heal), then any intro text, then the entries.
+  const intro = nonEntryPrefix.replace(/^(?:[ \t]*\n)+/, '').trimEnd(); // leading blank lines go, indentation stays
+  const newSection = `\n\n${intro ? `${intro}\n\n` : ''}${keptEntries.join('\n')}\n\n`;
   const newBody = `${before}${newSection}${after}`;
 
   return { body: newBody, archiveAppend };
