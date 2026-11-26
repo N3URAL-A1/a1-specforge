@@ -67,16 +67,21 @@ function openAppend(file) {
   return fd;
 }
 
+/** The first `size` bytes of `fd` as text. Reads from offset 0 explicitly, never from the fd position, so a later reorder cannot
+ * hash an empty read. */
+function readAll(fd, size) {
+  const buf = Buffer.alloc(size);
+  let off = 0;
+  while (off < size) { const n = fs.readSync(fd, buf, off, size - off, off); if (n === 0) break; off += n; }
+  return buf.toString('utf8', 0, off);
+}
+
 /** Reads the whole file through the open descriptor and returns the sha256 of the verified last line (null when empty);
  * throws egress_audit_broken, naming the reason and the way out, when the chain does not verify. */
 function verifiedTip(fd) {
   const size = fs.fstatSync(fd).size;
   if (size > MAX_BYTES) throw C.inputError(`chain too large (${size} bytes, bound ${MAX_BYTES}); ${WAY_OUT}`, 'egress_audit_broken');
-  // Read from offset 0 explicitly, never from the fd position, so a later reorder cannot hash an empty read.
-  const buf = Buffer.alloc(size);
-  let off = 0;
-  while (off < size) { const n = fs.readSync(fd, buf, off, size - off, off); if (n === 0) break; off += n; }
-  const v = verifyEgressText(buf.toString('utf8', 0, off));
+  const v = verifyEgressText(readAll(fd, size));
   if (!v.ok) throw C.inputError(`chain broken: ${v.why}; ${WAY_OUT}`, 'egress_audit_broken');
   return v.last === null ? null : sha256(v.last);
 }
@@ -126,20 +131,41 @@ function verifyEgressText(text) {
   return { ok: true, lines, last: raw[raw.length - 1], why: null };
 }
 
-/** Reads and checks the whole chain: { ok, lines, why }. A missing file is ok with no lines. */
+/** Reads and checks the whole chain: { ok, lines, why }. A missing file is ok with no lines. Opened as the append path opens it
+ * (audit F-011): no symlink is followed, a FIFO does not block, only a regular file with one link inside the size bound is read. */
 function verifyEgress(file) {
   const target = file || egressPath();
-  let text;
-  try { text = fs.readFileSync(target, 'utf8'); } catch (e) { return e.code === 'ENOENT' ? { ok: true, lines: [], why: null } : { ok: false, lines: [], why: 'the egress audit cannot be read' }; }
-  const v = verifyEgressText(text);
-  return { ok: v.ok, lines: v.lines, why: v.why };
+  const broken = (why) => ({ ok: false, lines: [], why });
+  let fd;
+  try { fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK); } catch (e) {
+    return e.code === 'ENOENT' ? { ok: true, lines: [], why: null } : broken(`the egress audit cannot be opened (${e.code || 'error'}; a symlink or an unreadable file is refused)`);
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.nlink !== 1) return broken('the egress audit is not a regular file with one link');
+    if (st.size > MAX_BYTES) return broken(`the egress audit is too large (${st.size} bytes, bound ${MAX_BYTES})`);
+    const v = verifyEgressText(readAll(fd, st.size));
+    return { ok: v.ok, lines: v.lines, why: v.why };
+  } catch (_e) { return broken('the egress audit cannot be read'); } finally { fs.closeSync(fd); }
+}
+
+/** verifyEgress under the egress lock, so an append in flight is waited for and never read half-written (audit F-011). Without
+ * the owner home there is no file and no lock to take; a home that is not a real directory, or a lock that stays taken, is reported. */
+function verifyEgressLocked(file) {
+  const home = path.dirname(file);
+  let st;
+  try { st = fs.lstatSync(home); } catch (e) { return e.code === 'ENOENT' ? verifyEgress(file) : { ok: false, lines: [], why: `${home} cannot be read` }; }
+  if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, lines: [], why: `${home} is not a real directory` };
+  try { return AUDIT.withLock(home, () => verifyEgress(file), LOCK_FILE); } catch (e) {
+    return { ok: false, lines: [], why: `not checked: ${e.message}` };
+  }
 }
 
 /** `xprov egress-verify`: read-only; exit 0 when the chain holds (or the file is absent), 1 with the reason when it is broken. */
 function cmdXprovEgressVerify(args) {
   if (args && args.length) return C.usageExit('egress-verify', `takes no argument (got ${JSON.stringify(String(args[0]).slice(0, 80))})`);
   const file = egressPath();
-  const v = verifyEgress(file);
+  const v = verifyEgressLocked(file);
   process.stderr.write(`xprov egress-verify: ${v.ok ? `chain ok, ${v.lines.length} line(s)` : `BROKEN: ${v.why}`} (${file})\n`);
   return C.emitJson({ ok: v.ok, lines: v.lines.length, reason: v.why, file }, v.ok ? X.EXIT_PASS : X.EXIT_FAIL, false);
 }
