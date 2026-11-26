@@ -93,7 +93,9 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   takes only the egress lock: checks the hash chain of
                   ~/.a1-xprov/egress-audit.jsonl. Exit 0 when it holds
                   (or the file is absent), 1 with the reason (line number) when it
-                  is broken; stdout { ok, lines, reason, file }. Opens the file as
+                  is broken; stdout { ok, checked, locked, lines, reason, file }
+                  (checked false: an I/O failure or a lockless read that
+                  ended in an incomplete line, NOT CHECKED, retry). Opens the file as
                   the append does (a symlink, FIFO or hard link: exit 1) and reads
                   it under the egress lock (a lock that stays taken: exit 1,
                   checked false, NOT CHECKED). $HOME not the owner home, or a home
