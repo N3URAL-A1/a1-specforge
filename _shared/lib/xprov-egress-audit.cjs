@@ -149,25 +149,36 @@ function verifyEgress(file) {
   } catch (_e) { return broken('the egress audit cannot be read'); } finally { fs.closeSync(fd); }
 }
 
+// A lock that cannot be created because the home is not writable means no append can be in flight either: read without it.
+const UNWRITABLE_CODES = new Set(['EACCES', 'EPERM', 'EROFS']);
+
 /** verifyEgress under the egress lock, so an append in flight is waited for and never read half-written (audit F-011). Without
- * the owner home there is no file and no lock to take; a home that is not a real directory, or a lock that stays taken, is reported. */
+ * the owner home there is no file and no lock to take; a home that is not a real directory is reported. The lock is skipped
+ * (`locked: false`, nothing created) when $HOME does not match the owner home (the spec-016 tripwire: no byte into the owner home)
+ * or the home is not writable. A lock that stays taken gives `checked: false`: the chain was not read. */
 function verifyEgressLocked(file) {
   const home = path.dirname(file);
   let st;
-  try { st = fs.lstatSync(home); } catch (e) { return e.code === 'ENOENT' ? verifyEgress(file) : { ok: false, lines: [], why: `${home} cannot be read` }; }
+  try { st = fs.lstatSync(home); } catch (e) { return e.code === 'ENOENT' ? verifyEgress(file) : { ok: false, lines: [], why: `${home} cannot be read (${e.code || 'error'})` }; }
   if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, lines: [], why: `${home} is not a real directory` };
-  try { return AUDIT.withLock(home, () => verifyEgress(file), LOCK_FILE); } catch (e) {
-    return { ok: false, lines: [], why: `not checked: ${e.message}` };
+  const unlocked = (note) => ({ ...verifyEgress(file), locked: false, lock_note: note });
+  if (OH.homeMismatch() !== null) return unlocked('$HOME is not the owner home; read without the lock, nothing created');
+  try { return { ...AUDIT.withLock(home, () => verifyEgress(file), LOCK_FILE), locked: true }; } catch (e) {
+    if (UNWRITABLE_CODES.has(e.code)) return unlocked(`the owner home is not writable (${e.code}); read without the lock`);
+    return { ok: false, checked: false, locked: false, lines: [], why: `${e.message.replace(/; nothing written$/, '')}; retry` };
   }
 }
 
-/** `xprov egress-verify`: read-only; exit 0 when the chain holds (or the file is absent), 1 with the reason when it is broken. */
+/** `xprov egress-verify`: never writes the audit, takes only the egress lock; exit 0 when the chain holds (or the file is absent),
+ * 1 with the reason when it is broken or could not be checked. */
 function cmdXprovEgressVerify(args) {
   if (args && args.length) return C.usageExit('egress-verify', `takes no argument (got ${JSON.stringify(String(args[0]).slice(0, 80))})`);
   const file = egressPath();
   const v = verifyEgressLocked(file);
-  process.stderr.write(`xprov egress-verify: ${v.ok ? `chain ok, ${v.lines.length} line(s)` : `BROKEN: ${v.why}`} (${file})\n`);
-  return C.emitJson({ ok: v.ok, lines: v.lines.length, reason: v.why, file }, v.ok ? X.EXIT_PASS : X.EXIT_FAIL, false);
+  const checked = v.checked !== false;
+  const note = v.lock_note ? `; ${v.lock_note}` : '';
+  process.stderr.write(`xprov egress-verify: ${v.ok ? `chain ok, ${v.lines.length} line(s)` : `${checked ? 'BROKEN' : 'NOT CHECKED'}: ${v.why}`} (${file}${note})\n`);
+  return C.emitJson({ ok: v.ok, checked, locked: v.locked === true, lines: v.lines.length, reason: v.why, file }, v.ok ? X.EXIT_PASS : X.EXIT_FAIL, false);
 }
 
 module.exports = { cmdXprovEgressVerify, EGRESS_FILE, LOCK_FILE, LINE_KEYS, egressPath, appendEgress, verifyEgress };
