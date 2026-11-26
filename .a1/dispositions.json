@@ -412,7 +412,10 @@
     "reason": "This is the fixed site itself: the class query matches the new notChecked(...) text that reports NOT CHECKED (checked:false); the BROKEN wording it hunted is gone (F-012).",
     "date": "2026-11-26",
     "by": "claude-main",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Round 1 + 2: the site now calls notChecked; the BROKEN wording the class query hunted is gone. The read-error site has no test; a shim was judged not worth it.",
+    "reviewed_at": "2026-11-26T16:14:38.700Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -420,6 +423,9 @@
     "reason": "This is the fixed site itself: the class query matches the new notChecked(...) text that reports NOT CHECKED (checked:false); the BROKEN wording it hunted is gone (F-012).",
     "date": "2026-11-26",
     "by": "claude-main",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Round 1 + 2: the lstat site now calls notChecked; EV13 guards it (red under its mutant).",
+    "reviewed_at": "2026-11-26T16:14:38.737Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   }
 ]
