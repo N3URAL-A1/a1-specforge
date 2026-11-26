@@ -30,6 +30,9 @@ const EGRESS_FILE = 'egress-audit.jsonl';
 const LOCK_FILE = AUDIT.EGRESS_LOCK_FILE;
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
+// Generous on purpose: a1 never rotates this file (~600 B per spawn), and the bound keeps the full verify far below the lock wait.
+const MAX_BYTES = 256 * 1024 * 1024;
+const WAY_OUT = 'nothing written. Check with xprov egress-verify, then move the file aside yourself (a1 never deletes it); the next spawn starts a new chain';
 const SHA_RE = /^[0-9a-f]{64}$/;
 const GIT_ID_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/; // sha1 or sha256 object id
 const LINE_KEYS = Object.freeze(['ts', 'repo', 'gate', 'mode', 'phase', 'round', 'lane', 'commit', 'tree', 'content_sha256', 'input_sha256', 'feedback_sha256', 'diff_sha256', 'model_pinned', 'prev']);
@@ -67,10 +70,14 @@ function openAppend(file) {
 /** Reads the whole file through the open descriptor and returns the sha256 of the verified last line (null when empty);
  * throws egress_audit_broken, naming the reason and the way out, when the chain does not verify. */
 function verifiedTip(fd) {
-  const v = verifyEgressText(fs.readFileSync(fd, 'utf8'));
-  if (!v.ok) {
-    throw C.inputError(`chain broken: ${v.why}; nothing written. Check with xprov egress-verify, then move the file aside yourself (a1 never deletes it); the next spawn starts a new chain`, 'egress_audit_broken');
-  }
+  const size = fs.fstatSync(fd).size;
+  if (size > MAX_BYTES) throw C.inputError(`chain too large (${size} bytes, bound ${MAX_BYTES}); ${WAY_OUT}`, 'egress_audit_broken');
+  // Read from offset 0 explicitly, never from the fd position, so a later reorder cannot hash an empty read.
+  const buf = Buffer.alloc(size);
+  let off = 0;
+  while (off < size) { const n = fs.readSync(fd, buf, off, size - off, off); if (n === 0) break; off += n; }
+  const v = verifyEgressText(buf.toString('utf8', 0, off));
+  if (!v.ok) throw C.inputError(`chain broken: ${v.why}; ${WAY_OUT}`, 'egress_audit_broken');
   return v.last === null ? null : sha256(v.last);
 }
 

@@ -15,6 +15,8 @@
 #   EA10 a gate run on the EA6-edited chain is refused (preflight_failed, detail egress_audit_broken + the way out), runner never
 #       spawned, file byte-identical.  Mutation: the append skips the full verify (prev from the last line only, as tipOf did).
 #   EA10b an off-format middle line (valid JSON, an extra key, every prev still chains) also refuses.  Mutation: the shared verifier skips validLine().
+#   EA10d a partial last line (final newline replaced by a space) refuses.  Mutation: verifyEgressText drops the endsWith('\n') check.
+#   EA10e a file over the 256 MiB bound refuses before the read.  Mutation: verifiedTip drops the MAX_BYTES check.
 #   EA10c after the owner moves the file aside, the next run passes with one line, prev null.  Mutation: verifiedTip returns a
 #       constant sha instead of null for an empty file, or the append refuses on a missing/empty file.
 #   EA7 symlink / directory / FIFO / hard link / unwritable target: nonzero, runner never spawned. Mutations: ignore the
@@ -126,6 +128,23 @@ mv "$(EGRESS42)" "$TMP42/egress-aside.jsonl"
 gate42 "[$OK42]" --gate "$GATE_PLAN"
 assert_rc "EA10c after moving the file aside the run passes" 0 "$G_RC" "$G_ERR"
 assert_eq "EA10c exactly one line, prev null, chain verifies" "$(lines42)/$(json_get "$(line42 1)" "j.prev")/$(verify42)" "1/null/true/1"
+
+# EA10d: a partial last line (the final newline replaced by a space) refuses; the append must not glue onto it.
+# Fresh phase (no earlier pass to reuse); three outage spawns write three good lines first.
+prep42; gate42 "[$NET42,$NET42,$NET42]" --gate "$GATE_PLAN"
+node -e 'const fs = require("fs"); const f = process.argv[1]; fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/\n$/, " "));' "$(EGRESS42)"
+SHA10D="$(sha42 "$(EGRESS42)")"; SP10D="$(spawns42)"
+gate42 "[$OK42]" --gate "$GATE_PLAN"
+assert_eq "EA10d partial last line: nonzero, preflight_failed, runner not spawned, file byte-identical" "$([[ $G_RC -ne 0 ]] && echo nonzero)/$(json_get "$G_OUT" "j.reason")/$(( $(spawns42) - SP10D ))/$([[ "$(sha42 "$(EGRESS42)")" == "$SHA10D" ]] && echo same)" "nonzero/preflight_failed/0/same"
+assert_json "EA10d the detail names the incomplete last line" "$G_OUT" "/egress_audit_broken/.test(j.reason_detail) && /last line is incomplete/.test(j.reason_detail)" "true"
+
+# EA10e: a file over the size bound refuses before it is read (sparse, so the case stays cheap)
+prep42; node -e 'const fs = require("fs"); fs.writeFileSync(process.argv[1], ""); fs.truncateSync(process.argv[1], 256 * 1024 * 1024 + 1);' "$(EGRESS42)"
+chmod 600 "$(EGRESS42)"; SP10E="$(spawns42)"
+gate42 "[$OK42]" --gate "$GATE_PLAN"
+assert_eq "EA10e over the bound: nonzero, preflight_failed, runner not spawned, size unchanged" "$([[ $G_RC -ne 0 ]] && echo nonzero)/$(json_get "$G_OUT" "j.reason")/$(( $(spawns42) - SP10E ))/$(wc -c < "$(EGRESS42)" | tr -d ' ')" "nonzero/preflight_failed/0/268435457"
+assert_json "EA10e the detail names the bound and the way out" "$G_OUT" "/egress_audit_broken/.test(j.reason_detail) && /too large/.test(j.reason_detail) && /move the file aside yourself/.test(j.reason_detail)" "true"
+rm -f "$(EGRESS42)"
 
 # EA4: no spawn, no line
 prep42; ( cd "$PHASE_REPO" && printf 'const k = "%s";\n' "AKIA$(head -c 16 /dev/zero | tr '\0' 'Q')" > src/leak.js && git add -A && git commit -qm "fixture: secret" ); gate42 "[$OK42]" --gate "$GATE_PLAN"
