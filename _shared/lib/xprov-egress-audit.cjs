@@ -33,6 +33,7 @@ const DIR_MODE = 0o700;
 // Generous on purpose: a1 never rotates this file (~600 B per spawn), and the bound keeps the full verify far below the lock wait.
 const MAX_BYTES = 256 * 1024 * 1024;
 const WAY_OUT = 'nothing written. Check with xprov egress-verify, then move the file aside yourself (a1 never deletes it); the next spawn starts a new chain';
+const INCOMPLETE = 'the last line is incomplete';
 const SHA_RE = /^[0-9a-f]{64}$/;
 const GIT_ID_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/; // sha1 or sha256 object id
 const LINE_KEYS = Object.freeze(['ts', 'repo', 'gate', 'mode', 'phase', 'round', 'lane', 'commit', 'tree', 'content_sha256', 'input_sha256', 'feedback_sha256', 'diff_sha256', 'model_pinned', 'prev']);
@@ -116,7 +117,7 @@ function appendEgress(r) {
  * behind both `xprov egress-verify` and the append path. */
 function verifyEgressText(text) {
   if (text === '') return { ok: true, lines: [], last: null, why: null };
-  if (!text.endsWith('\n')) return { ok: false, lines: [], last: null, why: 'the last line is incomplete' };
+  if (!text.endsWith('\n')) return { ok: false, lines: [], last: null, why: INCOMPLETE };
   const raw = text.slice(0, -1).split('\n');
   const lines = [];
   let prev = null;
@@ -131,14 +132,22 @@ function verifyEgressText(text) {
   return { ok: true, lines, last: raw[raw.length - 1], why: null };
 }
 
-/** Reads and checks the whole chain: { ok, lines, why }. A missing file is ok with no lines. Opened as the append path opens it
- * (audit F-011): no symlink is followed, a FIFO does not block, only a regular file with one link inside the size bound is read. */
+/** The chain was not judged (an I/O failure, or a read that may overlap an append): exit 1, NOT CHECKED, never BROKEN. */
+const REFUSED_OPEN_CODES = new Set(['ELOOP', 'ENXIO']);
+const notChecked = (why) => ({ ok: false, checked: false, lines: [], why: `${why}; retry` });
+
+/** Reads and checks the whole chain: { ok, lines, why, checked? }. A missing file is ok with no lines. Opened as the append path
+ * opens it (audit F-011): no symlink is followed, a FIFO does not block, only a regular file with one link inside the size bound
+ * is read. A refused file is BROKEN; an open or read error that is not a refusal is `checked: false` (F-012). */
 function verifyEgress(file) {
   const target = file || egressPath();
   const broken = (why) => ({ ok: false, lines: [], why });
   let fd;
   try { fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK); } catch (e) {
-    return e.code === 'ENOENT' ? { ok: true, lines: [], why: null } : broken(`the egress audit cannot be opened (${e.code || 'error'}; a symlink or an unreadable file is refused)`);
+    if (e.code === 'ENOENT') return { ok: true, lines: [], why: null };
+    // ELOOP: a symlink; ENXIO: a socket (open fails before the isFile test that refuses a FIFO). Both are refused files, not I/O failures.
+    if (REFUSED_OPEN_CODES.has(e.code)) return broken(`the egress audit cannot be opened (${e.code}; a symlink or a socket is refused)`);
+    return notChecked(`the egress audit cannot be opened (${e.code || 'error'})`);
   }
   try {
     const st = fs.fstatSync(fd);
@@ -146,10 +155,11 @@ function verifyEgress(file) {
     if (st.size > MAX_BYTES) return broken(`the egress audit is too large (${st.size} bytes, bound ${MAX_BYTES})`);
     const v = verifyEgressText(readAll(fd, st.size));
     return { ok: v.ok, lines: v.lines, why: v.why };
-  } catch (_e) { return broken('the egress audit cannot be read'); } finally { fs.closeSync(fd); }
+  } catch (e) { return notChecked(`the egress audit cannot be read (${e.code || 'error'})`); } finally { fs.closeSync(fd); }
 }
 
-// A lock that cannot be created because the home is not writable means no append can be in flight either: read without it.
+// A lock that cannot be created because the home is not writable means no append can START; one that started before the home
+// turned unwritable may still be writing, so a lockless read that ends in an incomplete line is not judged (see unlocked()).
 const UNWRITABLE_CODES = new Set(['EACCES', 'EPERM', 'EROFS']);
 
 /** verifyEgress under the egress lock, so an append in flight is waited for and never read half-written (audit F-011). Without
@@ -159,9 +169,13 @@ const UNWRITABLE_CODES = new Set(['EACCES', 'EPERM', 'EROFS']);
 function verifyEgressLocked(file) {
   const home = path.dirname(file);
   let st;
-  try { st = fs.lstatSync(home); } catch (e) { return e.code === 'ENOENT' ? verifyEgress(file) : { ok: false, lines: [], why: `${home} cannot be read (${e.code || 'error'})` }; }
+  try { st = fs.lstatSync(home); } catch (e) { return e.code === 'ENOENT' ? verifyEgress(file) : notChecked(`${home} cannot be read (${e.code || 'error'})`); }
   if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, lines: [], why: `${home} is not a real directory` };
-  const unlocked = (note) => ({ ...verifyEgress(file), locked: false, lock_note: note });
+  const unlocked = (note) => {
+    const v = verifyEgress(file);
+    const partial = !v.ok && v.checked !== false && v.why === INCOMPLETE;
+    return { ...(partial ? notChecked(`${INCOMPLETE}, read without the lock (an append may be in flight); if it persists, run with the owner $HOME to judge the chain`) : v), locked: false, lock_note: note };
+  };
   if (OH.homeMismatch() !== null) return unlocked('$HOME is not the owner home; read without the lock, nothing created');
   try { return { ...AUDIT.withLock(home, () => verifyEgress(file), LOCK_FILE), locked: true }; } catch (e) {
     if (UNWRITABLE_CODES.has(e.code)) return unlocked(`the owner home is not writable (${e.code}); read without the lock`);
