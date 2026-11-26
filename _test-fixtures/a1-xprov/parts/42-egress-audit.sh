@@ -35,7 +35,8 @@
 #       (EV9 locked true); drop the UNWRITABLE_CODES fallback (EV10 exit 1).
 #   EV11 an unreadable file (EACCES) and EV12 a lockless read ending in a partial line are NOT CHECKED (checked false), not BROKEN
 #       (follow-up F-012; EV10/EV11 skip under uid 0). Mutations: open errors other than ENOENT all go to broken() (EV11); unlocked()
-#       passes the incomplete-line result through (EV12).
+#       passes the incomplete-line result through (EV12). EV13 an unreadable owner home is NOT CHECKED.  Mutation: the lstat catch
+#       returns broken (EV13). EV14 a socket is BROKEN.  Mutation: drop ENXIO from REFUSED_OPEN_CODES (EV14 NOT CHECKED).
 # Helpers are copied from part 40 (a part must run alone in its shard).
 
 mk_workdir TMP42 "a1x42"
@@ -296,9 +297,14 @@ ev42; assert_eq "EV12 lockless partial line: exit 1, checked false, locked false
 assert_eq "EV12 stderr says NOT CHECKED, not BROKEN" "$(grep -c 'NOT CHECKED' "$TMP42/ev.err")/$(grep -c 'BROKEN' "$TMP42/ev.err")" "1/0"
 cp "$TMP42/oh.save" "$OHF42"; cp "$TMP42/ev12.save" "$E42"
 ev42; assert_eq "EV12b the restored file verifies again" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.checked")" "0/true/true"
+# EV14 (F-012 review): a Unix socket at the audit path is a refused file (open fails with ENXIO): BROKEN, not NOT CHECKED.
+mv "$E42" "$TMP42/ev14.save"
+node -e 'const s = require("net").createServer(); s.listen(process.argv[1], () => process.exit(0));' "$E42"
+ev42; assert_eq "EV14 a socket: exit 1, checked true, names the socket refusal" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.checked + '/' + /socket is refused/.test(j.reason)")" "1/false/true/true"
+rm -f "$E42"; mv "$TMP42/ev14.save" "$E42"
 # EV10: a home that is not writable is still checked (no append can start there). EV11 (F-012): a file that cannot be opened
 # (EACCES) is NOT CHECKED, not BROKEN. Both need chmod to bind, so they skip under uid 0.
-if [[ "$(id -u)" -eq 0 ]]; then ok "EV10/EV11 skipped (running as root: chmod is not enforced)"; else
+if [[ "$(id -u)" -eq 0 ]]; then ok "SKIP EV10/EV11/EV13 (running as root: chmod is not enforced)"; else
   chmod 500 "$HOME/.a1-xprov"
   ev42; assert_eq "EV10 unwritable home: exit 0, two lines, locked false" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.lines + '/' + j.locked")" "0/true/2/false"
   chmod 700 "$HOME/.a1-xprov"
@@ -306,6 +312,11 @@ if [[ "$(id -u)" -eq 0 ]]; then ok "EV10/EV11 skipped (running as root: chmod is
   ev42; assert_eq "EV11 unreadable file: exit 1, checked false, EACCES named" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.checked + '/' + /EACCES/.test(j.reason)")" "1/false/false/true"
   assert_eq "EV11 stderr says NOT CHECKED, not BROKEN" "$(grep -c 'NOT CHECKED' "$TMP42/ev.err")/$(grep -c 'BROKEN' "$TMP42/ev.err")" "1/0"
   chmod 600 "$E42"
+  # EV13 (F-012): the owner home cannot be read (no search permission on its parent) -> NOT CHECKED, not BROKEN.
+  HM42="$(node -e 'process.stdout.write((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8))' "$HOME")"
+  chmod 000 "$HOME"
+  ev42; chmod "$HM42" "$HOME"
+  assert_eq "EV13 unreadable owner home: exit 1, checked false, EACCES named" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.checked + '/' + /EACCES/.test(j.reason)")" "1/false/false/true"
 fi
 
 export HOME="$SAVED_HOME_42"

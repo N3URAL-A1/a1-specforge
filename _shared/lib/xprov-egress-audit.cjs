@@ -133,6 +133,7 @@ function verifyEgressText(text) {
 }
 
 /** The chain was not judged (an I/O failure, or a read that may overlap an append): exit 1, NOT CHECKED, never BROKEN. */
+const REFUSED_OPEN_CODES = new Set(['ELOOP', 'ENXIO']);
 const notChecked = (why) => ({ ok: false, checked: false, lines: [], why: `${why}; retry` });
 
 /** Reads and checks the whole chain: { ok, lines, why, checked? }. A missing file is ok with no lines. Opened as the append path
@@ -144,7 +145,9 @@ function verifyEgress(file) {
   let fd;
   try { fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK); } catch (e) {
     if (e.code === 'ENOENT') return { ok: true, lines: [], why: null };
-    return e.code === 'ELOOP' ? broken('the egress audit cannot be opened (ELOOP; a symlink is refused)') : notChecked(`the egress audit cannot be opened (${e.code || 'error'})`);
+    // ELOOP: a symlink; ENXIO: a socket (open fails before the isFile test that refuses a FIFO). Both are refused files, not I/O failures.
+    if (REFUSED_OPEN_CODES.has(e.code)) return broken(`the egress audit cannot be opened (${e.code}; a symlink or a socket is refused)`);
+    return notChecked(`the egress audit cannot be opened (${e.code || 'error'})`);
   }
   try {
     const st = fs.fstatSync(fd);
@@ -171,7 +174,7 @@ function verifyEgressLocked(file) {
   const unlocked = (note) => {
     const v = verifyEgress(file);
     const partial = !v.ok && v.checked !== false && v.why === INCOMPLETE;
-    return { ...(partial ? notChecked(`${INCOMPLETE}, read without the lock (an append may be in flight)`) : v), locked: false, lock_note: note };
+    return { ...(partial ? notChecked(`${INCOMPLETE}, read without the lock (an append may be in flight); if it persists, run with the owner $HOME to judge the chain`) : v), locked: false, lock_note: note };
   };
   if (OH.homeMismatch() !== null) return unlocked('$HOME is not the owner home; read without the lock, nothing created');
   try { return { ...AUDIT.withLock(home, () => verifyEgress(file), LOCK_FILE), locked: true }; } catch (e) {
