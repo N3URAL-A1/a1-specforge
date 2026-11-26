@@ -543,8 +543,10 @@ ${CONSENT_HELP}
                   spawn with gate, mode, phase, round, lane, the snapshot commit,
                   tree and content_sha256, and the sha256 of the PLAN or doc copy
                   sent and of the feedback copy (round 2); hashes only, no
-                  contents; a failed append refuses the spawn; never deleted by
-                  gc; check it with xprov egress-verify).
+                  contents; a failed append refuses the spawn, and so does a broken
+                  chain (the append re-verifies it all: check with xprov
+                  egress-verify, move the file aside yourself, the next spawn
+                  starts a new chain); never deleted or rotated by a1).
                   ENV: A1_XPROV_CODEX_HOME (optional; default ~/.codex-a1-review).
                   Fixture suite: _test-fixtures/a1-xprov/run-tests.sh (harness)
                   + parts/NN-<wave>.sh; runner fakes live in fake/, captured

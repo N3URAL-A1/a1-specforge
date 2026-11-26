@@ -12,6 +12,11 @@
 #       snapshot is refused with 0 lines. Mutation: drop the inputProblem checks (cmdXprovRun, runWithBaseline and
 #       recordEgress); the case checks the outcome, not which of the three guards fired.
 #   EA6 an edited line breaks the chain.            Mutation: verifyEgress skips the `prev` comparison.
+#   EA10 a gate run on the EA6-edited chain is refused (preflight_failed, detail egress_audit_broken + the way out), runner never
+#       spawned, file byte-identical.  Mutation: the append skips the full verify (prev from the last line only, as tipOf did).
+#   EA10b an off-format middle line (valid JSON, an extra key, every prev still chains) also refuses.  Mutation: the shared verifier skips validLine().
+#   EA10c after the owner moves the file aside, the next run passes with one line, prev null.  Mutation: verifiedTip returns a
+#       constant sha instead of null for an empty file, or the append refuses on a missing/empty file.
 #   EA7 symlink / directory / FIFO / hard link / unwritable target: nonzero, runner never spawned. Mutations: ignore the
 #       append failure in recordEgress (all); drop O_NOFOLLOW (symlink); drop the `isFile` test (the FIFO appender case; the gate runs are refused by the open or fsync error anyway); drop
 #       the `nlink !== 1` test (hard link).
@@ -98,6 +103,29 @@ assert_eq "EA3 the chain verifies" "$(verify42)" "true/3"
 # EA6: an edited line breaks the chain (uses the EA3 file)
 node -e 'const fs = require("fs"); const f = process.argv[1]; const l = fs.readFileSync(f, "utf8").split("\n"); const o = JSON.parse(l[1]); o.round = 9; l[1] = JSON.stringify(o); fs.writeFileSync(f, l.join("\n"));' "$(EGRESS42)"
 assert_eq "EA6 an edited middle line breaks the chain" "$(verify42)" "false/2"
+
+# EA10: a gate run on the broken chain (EA6 left an edited middle line) is refused before the spawn; the file stays as it was
+SHA10_BEFORE="$(sha42 "$(EGRESS42)")"; SP10_BEFORE="$(spawns42)"
+gate42 "[$OK42]" --gate "$GATE_PLAN"
+assert_eq "EA10 broken chain: nonzero, preflight_failed" "$([[ $G_RC -ne 0 ]] && echo nonzero)/$(json_get "$G_OUT" "j.reason")" "nonzero/preflight_failed"
+assert_json "EA10 the detail names egress_audit_broken, the check and the way out" "$G_OUT" "[/egress_audit_broken/.test(j.reason_detail), /egress-verify/.test(j.reason_detail), /move the file aside yourself/.test(j.reason_detail), /next spawn starts a new chain/.test(j.reason_detail)].join('/')" "true/true/true/true"
+assert_eq "EA10 the runner never spawned" "$(spawns42)" "$SP10_BEFORE"
+assert_eq "EA10 the egress file is byte-identical" "$(sha42 "$(EGRESS42)")" "$SHA10_BEFORE"
+
+# EA10b: an off-format middle line (valid JSON, an extra key, every prev still chains) refuses too
+prep42; gate42 "[$NET42,$NET42,$NET42]" --gate "$GATE_PLAN"
+node -e 'const fs = require("fs"); const c = require("crypto"); const f = process.argv[1]; const l = fs.readFileSync(f, "utf8").split("\n"); l[1] = JSON.stringify({ ...JSON.parse(l[1]), extra_key: 1 }); const o = JSON.parse(l[2]); o.prev = c.createHash("sha256").update(l[1]).digest("hex"); l[2] = JSON.stringify(o); fs.writeFileSync(f, l.join("\n"));' "$(EGRESS42)"
+assert_eq "EA10b control: only the format rule is violated (every prev still chains)" "$(node -e 'const fs = require("fs"); const c = require("crypto"); const l = fs.readFileSync(process.argv[1], "utf8").split("\n"); process.stdout.write(String(JSON.parse(l[2]).prev === c.createHash("sha256").update(l[1]).digest("hex") && JSON.parse(l[1]).prev === c.createHash("sha256").update(l[0]).digest("hex")))' "$(EGRESS42)")" "true"
+SHA10B="$(sha42 "$(EGRESS42)")"; SP10B="$(spawns42)"
+gate42 "[$OK42]" --gate "$GATE_PLAN"
+assert_eq "EA10b off-format middle line: nonzero, preflight_failed, runner not spawned, file byte-identical" "$([[ $G_RC -ne 0 ]] && echo nonzero)/$(json_get "$G_OUT" "j.reason")/$(( $(spawns42) - SP10B ))/$([[ "$(sha42 "$(EGRESS42)")" == "$SHA10B" ]] && echo same)" "nonzero/preflight_failed/0/same"
+assert_json "EA10b the detail names the off-format line" "$G_OUT" "/egress_audit_broken/.test(j.reason_detail) && /line 2 is off-format/.test(j.reason_detail)" "true"
+
+# EA10c: the owner moves the file aside; the next run passes and starts a new chain
+mv "$(EGRESS42)" "$TMP42/egress-aside.jsonl"
+gate42 "[$OK42]" --gate "$GATE_PLAN"
+assert_rc "EA10c after moving the file aside the run passes" 0 "$G_RC" "$G_ERR"
+assert_eq "EA10c exactly one line, prev null, chain verifies" "$(lines42)/$(json_get "$(line42 1)" "j.prev")/$(verify42)" "1/null/true/1"
 
 # EA4: no spawn, no line
 prep42; ( cd "$PHASE_REPO" && printf 'const k = "%s";\n' "AKIA$(head -c 16 /dev/zero | tr '\0' 'Q')" > src/leak.js && git add -A && git commit -qm "fixture: secret" ); gate42 "[$OK42]" --gate "$GATE_PLAN"

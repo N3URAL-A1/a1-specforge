@@ -10,6 +10,9 @@
 //     `prev` = sha256 (hex) of the previous line's exact text, null on the first line.
 //
 // One line per `spawnRunner` call, written BEFORE the spawn (audit before effect: a failed append refuses the spawn).
+// The append re-verifies the whole chain under the lock (the same rules as `xprov egress-verify`) and fails closed: a broken
+// chain (edited, off-format or incomplete line) refuses the spawn and nothing is appended. The owner moves the file aside;
+// the next spawn then starts a new chain.
 // It does not depend on `--no-log` or A1_KEEP_REVIEW_LOGS (the opt-in review log is unchanged). It holds hashes and names,
 // never file contents. Tier 0 like consent-audit.jsonl: the chain makes an edit visible, it prevents nothing; the same OS
 // user can rewrite the whole file. Nothing in a1 deletes or rotates this file.
@@ -27,7 +30,6 @@ const EGRESS_FILE = 'egress-audit.jsonl';
 const LOCK_FILE = AUDIT.EGRESS_LOCK_FILE;
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
-const TAIL_BYTES = 65536; // one line is far below this; the tail holds the last complete line
 const SHA_RE = /^[0-9a-f]{64}$/;
 const GIT_ID_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/; // sha1 or sha256 object id
 const LINE_KEYS = Object.freeze(['ts', 'repo', 'gate', 'mode', 'phase', 'round', 'lane', 'commit', 'tree', 'content_sha256', 'input_sha256', 'feedback_sha256', 'diff_sha256', 'model_pinned', 'prev']);
@@ -62,24 +64,19 @@ function openAppend(file) {
   return fd;
 }
 
-/** sha256 of the last line's text (null for an empty file); throws when the file does not end in a newline. */
-function tipOf(fd) {
-  const size = fs.fstatSync(fd).size;
-  if (size === 0) return null;
-  const len = Math.min(size, TAIL_BYTES);
-  const buf = Buffer.alloc(len);
-  fs.readSync(fd, buf, 0, len, size - len);
-  const text = buf.toString('utf8');
-  if (!text.endsWith('\n')) throw C.inputError('the last egress audit line is incomplete; fix or move the file yourself; nothing written', 'egress_audit_broken');
-  const lines = text.slice(0, -1).split('\n');
-  const last = lines[lines.length - 1];
-  if (lines.length === 1 && size > len) throw C.inputError('the last egress audit line exceeds the tail window; nothing written', 'egress_audit_broken');
-  return sha256(last);
+/** Reads the whole file through the open descriptor and returns the sha256 of the verified last line (null when empty);
+ * throws egress_audit_broken, naming the reason and the way out, when the chain does not verify. */
+function verifiedTip(fd) {
+  const v = verifyEgressText(fs.readFileSync(fd, 'utf8'));
+  if (!v.ok) {
+    throw C.inputError(`chain broken: ${v.why}; nothing written. Check with xprov egress-verify, then move the file aside yourself (a1 never deletes it); the next spawn starts a new chain`, 'egress_audit_broken');
+  }
+  return v.last === null ? null : sha256(v.last);
 }
 
 /**
  * Appends one chained line and returns it. Throws a typed input error (nothing appended) when the home tripwire holds, the
- * target is a symlink or not a regular file, the log ends in a partial line, or the write fails.
+ * target is a symlink or not a regular file, or the existing chain is broken anywhere (incl. a partial last line), or the write fails.
  * `r`: { repo, gate, mode, phase, round, lane, commit, tree, content_sha256, input_sha256, feedback_sha256?, diff_sha256?, model_pinned, now? }.
  */
 function appendEgress(r) {
@@ -92,7 +89,7 @@ function appendEgress(r) {
         ts: r.now || new Date().toISOString(), repo: r.repo, gate: r.gate, mode: r.mode, phase: r.phase, round: r.round,
         lane: r.lane === undefined ? null : r.lane, commit: r.commit === undefined ? null : r.commit,
         tree: r.tree === undefined ? null : r.tree, content_sha256: r.content_sha256 === undefined ? null : r.content_sha256,
-        input_sha256: r.input_sha256, feedback_sha256: r.feedback_sha256 === undefined ? null : r.feedback_sha256, diff_sha256: r.diff_sha256 === undefined ? null : r.diff_sha256, model_pinned: r.model_pinned, prev: tipOf(fd),
+        input_sha256: r.input_sha256, feedback_sha256: r.feedback_sha256 === undefined ? null : r.feedback_sha256, diff_sha256: r.diff_sha256 === undefined ? null : r.diff_sha256, model_pinned: r.model_pinned, prev: verifiedTip(fd),
       };
       if (!validLine(line)) throw C.inputError('egress audit: line is off-format; nothing written', 'egress_audit_input');
       fs.fchmodSync(fd, FILE_MODE);
@@ -103,25 +100,32 @@ function appendEgress(r) {
   }, LOCK_FILE);
 }
 
-/** Reads and checks the whole chain: { ok, lines, why }. A missing file is ok with no lines. */
-function verifyEgress(file) {
-  const target = file || egressPath();
-  let text;
-  try { text = fs.readFileSync(target, 'utf8'); } catch (e) { return e.code === 'ENOENT' ? { ok: true, lines: [], why: null } : { ok: false, lines: [], why: 'the egress audit cannot be read' }; }
-  if (text === '') return { ok: true, lines: [], why: null };
-  if (!text.endsWith('\n')) return { ok: false, lines: [], why: 'the last line is incomplete' };
+/** Checks the chain in `text`: { ok, lines, last, why }. `last` = exact text of the last line (null when empty). The ONE rule set
+ * behind both `xprov egress-verify` and the append path. */
+function verifyEgressText(text) {
+  if (text === '') return { ok: true, lines: [], last: null, why: null };
+  if (!text.endsWith('\n')) return { ok: false, lines: [], last: null, why: 'the last line is incomplete' };
   const raw = text.slice(0, -1).split('\n');
   const lines = [];
   let prev = null;
   for (let i = 0; i < raw.length; i++) {
     let o;
-    try { o = JSON.parse(raw[i]); } catch (_e) { return { ok: false, lines, why: `line ${i + 1} is not JSON` }; }
-    if (!validLine(o)) return { ok: false, lines, why: `line ${i + 1} is off-format` };
-    if (o.prev !== prev) return { ok: false, lines, why: `line ${i + 1} does not chain to line ${i}` };
+    try { o = JSON.parse(raw[i]); } catch (_e) { return { ok: false, lines, last: null, why: `line ${i + 1} is not JSON` }; }
+    if (!validLine(o)) return { ok: false, lines, last: null, why: `line ${i + 1} is off-format` };
+    if (o.prev !== prev) return { ok: false, lines, last: null, why: `line ${i + 1} does not chain to line ${i}` };
     lines.push(Object.freeze(o));
     prev = sha256(raw[i]);
   }
-  return { ok: true, lines, why: null };
+  return { ok: true, lines, last: raw[raw.length - 1], why: null };
+}
+
+/** Reads and checks the whole chain: { ok, lines, why }. A missing file is ok with no lines. */
+function verifyEgress(file) {
+  const target = file || egressPath();
+  let text;
+  try { text = fs.readFileSync(target, 'utf8'); } catch (e) { return e.code === 'ENOENT' ? { ok: true, lines: [], why: null } : { ok: false, lines: [], why: 'the egress audit cannot be read' }; }
+  const v = verifyEgressText(text);
+  return { ok: v.ok, lines: v.lines, why: v.why };
 }
 
 /** `xprov egress-verify`: read-only; exit 0 when the chain holds (or the file is absent), 1 with the reason when it is broken. */
