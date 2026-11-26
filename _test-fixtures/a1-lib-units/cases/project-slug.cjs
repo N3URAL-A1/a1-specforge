@@ -6,6 +6,7 @@
 // Measured red 2026-11-25 (one edit each in a scratch copy of project-slug.cjs, this file run):
 //   projectSlug / repoProjectSlug return the basename without safeName()   -> PS1, PS2, PS3, PS5
 //   SAFE_NAME_RE tightened to lower case only (SLUG_RE)                    -> PS4
+//   safeName() returns the name without toLowerCase() (2026-11-26)          -> PS4
 //   SAFE_NAME_RE not exported                                              -> PS6
 //   opts.slug bypasses safeName()                                          -> PS2 (a ROADMAP bypass is unobservable: roadmapProject already checks SLUG_RE)
 //   PS7 is a green control: the ROADMAP project and a valid opts.slug still win
@@ -41,8 +42,10 @@ eq('PS2 projectSlug with an unsafe opts.slug', P.projectSlug({ slug: 'a b', proj
   eq('PS3 control: projectSlug sees the worktree name', P.projectSlug({ project: wt }), 'wt-safe');
 }
 
-// PS4 mixed case is a safe name (fixture temp dirs carry mixed-case suffixes)
-eq('PS4 mixed-case basename is kept', P.repoProjectSlug(mk('Tmp.aB3x_Q-9')), 'Tmp.aB3x_Q-9');
+// PS4 mixed case is a safe name (fixture temp dirs carry mixed-case suffixes) and comes back lower-cased,
+// so Foo and foo name one store file on every host (owner decision 2026-11-26)
+eq('PS4 mixed-case basename is lower-cased', P.repoProjectSlug(mk('Tmp.aB3x_Q-9')), 'tmp.ab3x_q-9');
+eq('PS4 projectSlug lower-cases the folder name and opts.slug', [P.projectSlug({ project: mk('Proj-C') }), P.projectSlug({ slug: 'Given-X', project: mk('ps4') })], ['proj-c', 'given-x']);
 
 // PS5 a safe basename is returned as is
 eq('PS5 safe basename', [P.repoProjectSlug(mk('proj-a')), P.projectSlug({ project: mk('proj-b') })], ['proj-a', 'proj-b']);
