@@ -405,5 +405,21 @@
     "review_reason": "Reinhard PR 119 5.1: machine entries are written only to a1-new-feature.md (machine-retro.cjs:18, sole caller feature-close.cjs:184); the other stores have one writer per run",
     "reviewed_at": "2026-11-24T21:20:39.362Z",
     "reviewed_by": "a1-reinhard-reviewer"
+  },
+  {
+    "kind": "class_sweep",
+    "fingerprint": "class-sweep:_shared/lib/xprov-egress-audit.cjs:61794707ab9db9fe",
+    "reason": "This is the fixed site itself: the class query matches the new notChecked(...) text that reports NOT CHECKED (checked:false); the BROKEN wording it hunted is gone (F-012).",
+    "date": "2026-11-26",
+    "by": "claude-main",
+    "review": "pending"
+  },
+  {
+    "kind": "class_sweep",
+    "fingerprint": "class-sweep:_shared/lib/xprov-egress-audit.cjs:24dea411268b438b",
+    "reason": "This is the fixed site itself: the class query matches the new notChecked(...) text that reports NOT CHECKED (checked:false); the BROKEN wording it hunted is gone (F-012).",
+    "date": "2026-11-26",
+    "by": "claude-main",
+    "review": "pending"
   }
 ]
