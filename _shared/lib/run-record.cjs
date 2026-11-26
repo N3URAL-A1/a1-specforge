@@ -16,7 +16,7 @@ const { peekVaultRoot } = require('./io-roots.cjs');
 const { assertAncestorInside, writeTextAtomic } = require('./fs-safe.cjs');
 const { validateScope, assertContained, acquireLock, releaseLock } = require('./gate-log.cjs');
 const { readGateLog, gatesFired } = require('./retro-gatelog.cjs');
-const { repoProjectSlug, SAFE_NAME_RE } = require('./project-slug.cjs');
+const { repoProjectSlug } = require('./project-slug.cjs');
 const { emitExit } = require('./emit-exit.cjs');
 
 const MAX_REPO_CHARS = 4096;
@@ -140,7 +140,7 @@ function lockRuns(dir, project) {
 /** @param {{repo: string, scope: string, pr: number|null}} a @returns {{exit: number, out: Object}} */
 function record(a) {
   const project = repoProjectSlug(a.repo);
-  if (project === null || !SAFE_NAME_RE.test(project)) throw new RunError(1, 'unsafe_project_name', 'the derived project name is not a safe file name; nothing was written. Set `project:` in docs/product/ROADMAP.md to a slug, or rename the checkout folder (letters, digits, . _ -)');
+  if (project === null) throw new RunError(1, 'unsafe_project_name', 'the derived project name is not a safe file name; nothing was written. Set `project:` in docs/product/ROADMAP.md to a slug, or rename the checkout folder (letters, digits, . _ -)');
   const store = storeDir();
   const { dir, file } = runsFile(store, project, false);
   const records = readRecords(a.repo, a.scope);

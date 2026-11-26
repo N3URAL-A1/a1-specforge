@@ -151,7 +151,7 @@ rr_repo RR11P rr11; rr_store RR11V rr11v
 rr_plant "$RR11P" pr-3 '[{"gate":"verify-run","exit":0,"dur":3}]'
 OUT="$(cd "$RR11P" && A1_VAULT_ROOT="$RR11V" node "$TOOLS" run record --repo . --scope pr-3 2>&1)"; RC=$?
 assert_rc "RR11a --repo . from inside the repo" 0 "$RC" "$OUT"
-assert_eq "RR11b the runs file is named after the folder" "$(ls "$RR11V/pattern/a1-learnings/_runs" 2>/dev/null | tr '\n' ',')" "$(basename "$RR11P").jsonl,"
+assert_eq "RR11b the runs file is named after the folder" "$(ls "$RR11V/pattern/a1-learnings/_runs" 2>/dev/null | tr '\n' ',')" "$(basename "$RR11P" | tr '[:upper:]' '[:lower:]').jsonl,"
 
 # RR12 — concurrent run record calls lose no line (review R1: lost update)
 rr_repo RR12P rr12 fx-proj; rr_store RR12V rr12v
@@ -197,6 +197,16 @@ rr_plant "$RR14WB/wt-safe" pr-2 '[{"gate":"verify-run","exit":0,"dur":3}]'
 rr_run "$RR14WV" --repo "$RR14WB/wt-safe" --scope pr-2 --pr 2
 assert_rc "RR14c worktree of an unsafe main checkout: exit 1" 1 "$RC" "$OUT"; assert_has "RR14c reason" "$OUT" "unsafe_project_name"
 assert_eq "RR14c no _runs directory created" "$([[ -e "$RR14WV/pattern/a1-learnings/_runs" ]] && echo yes || echo no)" "no"
+
+# RR14d — a mixed-case folder name is lower-cased: Fx-Case and fx-case share one store file on every host (owner decision 2026-11-26)
+mk_workdir RR14DB rr14d; RR14DP="$RR14DB/Fx-Case"; mkdir -p "$RR14DP"; rr_store RR14DV rr14dv
+git -C "$RR14DP" init -q -b main; echo a > "$RR14DP/a.txt"; git -C "$RR14DP" add -A
+git -C "$RR14DP" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -qm one
+rr_plant "$RR14DP" pr-2 '[{"gate":"verify-run","exit":0,"dur":3}]'
+rr_run "$RR14DV" --repo "$RR14DP" --scope pr-2 --pr 2
+assert_rc "RR14d mixed-case folder: exit 0" 0 "$RC" "$OUT"
+assert_eq "RR14d store file and project are lower case" "$(rr_json "$RR14DV/pattern/a1-learnings/_runs/fx-case.jsonl" 'l[0].project')" "fx-case"
+assert_eq "RR14d no mixed-case store file" "$(ls "$RR14DV/pattern/a1-learnings/_runs/")" "fx-case.jsonl"
 
 # RR15 — a FIFO as gate log does not hang run record
 rr_repo RR15P rr15; rr_store RR15V rr15v

@@ -24,7 +24,7 @@ const { gitSafe } = require('./git-safe.cjs');
 const { envWithoutGitRedirects } = require('./git-env.cjs');
 const { SCOPE_RE } = require('./gate-log.cjs');
 const { listGateLogs } = require('./worktree-gatelog.cjs');
-const { repoProjectSlug, SLUG_RE } = require('./project-slug.cjs');
+const { repoProjectSlug } = require('./project-slug.cjs');
 const { storeDir } = require('./run-record.cjs');
 const MR = require('./machine-retro.cjs');
 
@@ -194,7 +194,7 @@ function machineRetro(ctx) {
   if (rs.problem) return skip(`${rs.problem}; no machine record written`);
   if (rs.records.length === 0) return skip(null);
   const project = repoProjectSlug(ctx.repo);
-  if (project === null || !SLUG_RE.test(project)) ctx.warnings.push('machine-retro: the project name is not a lower-case slug; the record is written with project: unknown');
+  if (project === null) ctx.warnings.push('machine-retro: the checkout folder name is not a safe project name; the record is written with project: unknown');
   const entry = MR.renderEntry({ date: new Date().toISOString().slice(0, 10), spec: ctx.opts.by, pr: ctx.opts.pr, project, retro, decision, issues: ctx.opts.issues });
   let r;
   try { r = MR.appendMachineRetro({ store, spec: ctx.opts.by, pr: ctx.opts.pr, entry }); } catch (e) {

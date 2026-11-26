@@ -12,7 +12,8 @@
 //   a missing store throws instead of warning                  -> FR7
 // Measured red 2026-11-25 (bug project-slug-source; one edit each in a scratch copy of feature-close.cjs, this file run):
 //   resolveSpec drops the `slug === null` branch (no --spec hint) -> FR9
-//   the `project === null || !SLUG_RE.test(project)` warning removed -> FR10
+//   the `project === null || !SLUG_RE.test(project)` warning removed -> FR10 (until 2026-11-26; the SLUG_RE branch is gone, FR11 covers the null warning)
+// Measured red 2026-11-26 (bug slug-lowercase): safeName() without toLowerCase() -> FR10
 
 const fs = require('fs');
 const path = require('path');
@@ -202,13 +203,13 @@ const { appendGateLine } = require(path.join(LIB, 'gate-log.cjs'));
   check('FR9 spec_not_found with a --spec hint, files unchanged', r.rc !== 0 && r.json && r.json.reason === 'spec_not_found' && /--spec/.test(r.json.detail || '') && JSON.stringify(before) === JSON.stringify(files(t)), r.out);
 }
 
-// FR10 (bug project-slug-source) a mixed-case folder is a safe name but no lower-case slug: the record says project: unknown and the close
-// warns about the fallback.
+// FR10 (bug slug-lowercase, owner decision 2026-11-26) a mixed-case folder is lower-cased into a slug: the record says project: proj-a
+// and the close gives no unknown-fallback warning.
 {
   const t = build('fr10', { primary: 'Proj-A' });
   const r = close(t, [...ARGS, '--spec', t.spec]);
-  check('FR10 exit 0, a warning names the unknown fallback', r.rc === 0 && r.json && r.json.warnings.some((w) => /project: unknown/.test(w)), r.out);
-  check('FR10 the stored entry has project: unknown', /\nproject: unknown\n/.test(read(STORE(t)) || ''), read(STORE(t)));
+  check('FR10 exit 0, no unknown-fallback warning', r.rc === 0 && r.json && !r.json.warnings.some((w) => /project: unknown/.test(w)), r.out);
+  check('FR10 the stored entry has project: proj-a', /\nproject: proj-a\n/.test(read(STORE(t)) || ''), read(STORE(t)));
 }
 
 // FR11 (review round 1) a checkout folder that is no safe name, with --spec given: the machine record is written with project: unknown and

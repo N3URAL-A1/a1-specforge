@@ -81,10 +81,10 @@ assert_eq "PT3a ROADMAP project: store rows found, source store" "$(pt_j 'j.proj
 assert_eq "PT3a2 store why counts reach the report" "$(pt_j 'j.ci_evidence_why.ok')" "3"
 pt_repo PT3N pt3-noroadmap
 pt_run "$PT_NOSTORE" "$PT3N" --repo "$PT3N" --json
-assert_eq "PT3b without ROADMAP: the repo directory name" "$(pt_j 'j.project')" "$(basename "$PT3N")"
+assert_eq "PT3b without ROADMAP: the repo directory name" "$(pt_j 'j.project')" "$(basename "$PT3N" | tr '[:upper:]' '[:lower:]')"
 git -C "$PT3N" worktree add -q "$PT_W/pt3-wt" -b wt-branch 2>/dev/null
 pt_run "$PT_NOSTORE" "$PT_W/pt3-wt" --repo "$PT_W/pt3-wt" --json
-assert_eq "PT3c from a worktree: the main checkout directory name" "$(pt_j 'j.project')" "$(basename "$PT3N")"
+assert_eq "PT3c from a worktree: the main checkout directory name" "$(pt_j 'j.project')" "$(basename "$PT3N" | tr '[:upper:]' '[:lower:]')"
 pt_run "$PT_NOSTORE" "$PT_W/pt3-wt" --json
 assert_eq "PT3d default repo found by walking up from cwd" "$(pt_j 'j.repo')" "$PT_W/pt3-wt"
 
@@ -210,7 +210,7 @@ assert_eq "PT12 facade-written scope: no_duration 0, one row" "$(pt_j 'j.no_dura
 # ---- PT13: a relative --repo resolves against the cwd (verification gap 1) ----
 pt_repo PT13P pt13
 pt_run "$PT_NOSTORE" "$PT13P" --repo . --json
-assert_eq "PT13 --repo . yields the folder name as project" "$(pt_j 'j.project')" "$(basename "$PT13P")"
+assert_eq "PT13 --repo . yields the folder name as project" "$(pt_j 'j.project')" "$(basename "$PT13P" | tr '[:upper:]' '[:lower:]')"
 
 # ---- PT14: _unscoped is left out by default, in the report and in the baseline (review R1 MAJOR) ----
 pt_repo PT14P pt14 fx-proj

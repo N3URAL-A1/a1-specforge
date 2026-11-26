@@ -10,13 +10,14 @@ const path = require('path');
 const { parseNestedFrontmatter } = require('./io.cjs');
 
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,100}$/;
-// Case-tolerant: checkout names (and fixture temp dirs) carry mixed case. Anything else (space, newline, leading dot) is not a name.
-// Known, not handled (open owner decision): on a case-insensitive filesystem `Foo` and `foo` name the same store file.
+// Case-tolerant on input: checkout names (and fixture temp dirs) carry mixed case. Anything else (space, newline, leading dot) is not a name.
+// The result is lower-cased (owner decision 2026-11-26): `Foo` and `foo` name the same store file on every host,
+// not only on a case-insensitive filesystem.
 const SAFE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/;
 
-/** @param {string} name @returns {string|null} `name` when it is a safe file/path segment, else null (never `.test(null)`) */
+/** @param {string} name @returns {string|null} `name` lower-cased when it is a safe file/path segment, else null (never `.test(null)`) */
 function safeName(name) {
-  return typeof name === 'string' && SAFE_NAME_RE.test(name) ? name : null;
+  return typeof name === 'string' && SAFE_NAME_RE.test(name) ? name.toLowerCase() : null;
 }
 
 /** @param {string} dir @returns {string|null} ROADMAP.md frontmatter `project` when it is a valid slug */
@@ -28,7 +29,7 @@ function roadmapProject(dir) {
   return null;
 }
 
-/** @param {{slug?: string, project: string}} opts @returns {string|null} null when no source yields a safe name */
+/** @param {{slug?: string, project: string}} opts @returns {string|null} the first source, lower-cased; null when it is no safe name */
 function projectSlug(opts) {
   return safeName(opts.slug || roadmapProject(opts.project) || path.basename(opts.project));
 }
@@ -48,7 +49,7 @@ function mainCheckoutDir(repo) {
   }
 }
 
-/** @param {string} repo @returns {string|null} roadmap project, else the directory name of the main checkout; null when unsafe */
+/** @param {string} repo @returns {string|null} roadmap project, else the lower-cased directory name of the main checkout; null when unsafe */
 function repoProjectSlug(repo) {
   return safeName(roadmapProject(repo) || path.basename(mainCheckoutDir(repo)));
 }
