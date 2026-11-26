@@ -29,7 +29,7 @@ function roadmapProject(dir) {
   return null;
 }
 
-/** @param {{slug?: string, project: string}} opts @returns {string|null} null when no source yields a safe name */
+/** @param {{slug?: string, project: string}} opts @returns {string|null} the first source, lower-cased; null when it is no safe name */
 function projectSlug(opts) {
   return safeName(opts.slug || roadmapProject(opts.project) || path.basename(opts.project));
 }
@@ -49,7 +49,7 @@ function mainCheckoutDir(repo) {
   }
 }
 
-/** @param {string} repo @returns {string|null} roadmap project, else the directory name of the main checkout; null when unsafe */
+/** @param {string} repo @returns {string|null} roadmap project, else the lower-cased directory name of the main checkout; null when unsafe */
 function repoProjectSlug(repo) {
   return safeName(roadmapProject(repo) || path.basename(mainCheckoutDir(repo)));
 }

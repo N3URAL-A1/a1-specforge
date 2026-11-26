@@ -12,7 +12,7 @@
 //   a missing store throws instead of warning                  -> FR7
 // Measured red 2026-11-25 (bug project-slug-source; one edit each in a scratch copy of feature-close.cjs, this file run):
 //   resolveSpec drops the `slug === null` branch (no --spec hint) -> FR9
-//   the `project === null || !SLUG_RE.test(project)` warning removed -> FR10 (until 2026-11-26; now FR11 covers the warning)
+//   the `project === null || !SLUG_RE.test(project)` warning removed -> FR10 (until 2026-11-26; the SLUG_RE branch is gone, FR11 covers the null warning)
 // Measured red 2026-11-26 (bug slug-lowercase): safeName() without toLowerCase() -> FR10
 
 const fs = require('fs');
