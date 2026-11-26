@@ -89,10 +89,16 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   only, a value a human set differently is refused (exit 1,
                   file unchanged).
     egress-verify
-                  (xprov-egress-audit.cjs, audit F-001) read-only: checks the hash
-                  chain of ~/.a1-xprov/egress-audit.jsonl. Exit 0 when it holds
+                  (xprov-egress-audit.cjs, audit F-001) never writes the audit,
+                  takes only the egress lock: checks the hash chain of
+                  ~/.a1-xprov/egress-audit.jsonl. Exit 0 when it holds
                   (or the file is absent), 1 with the reason (line number) when it
-                  is broken; stdout { ok, lines, reason, file }. Tier 0: the same
+                  is broken; stdout { ok, lines, reason, file }. Opens the file as
+                  the append does (a symlink, FIFO or hard link: exit 1) and reads
+                  it under the egress lock (a lock that stays taken: exit 1,
+                  checked false, NOT CHECKED). $HOME not the owner home, or a home
+                  that is not writable: read without the lock, locked false.
+                  Tier 0: the same
                   OS user can rewrite the whole file; truncation and deletion are
                   not detectable.
     permit-check [--repo <git-toplevel>]

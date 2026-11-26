@@ -28,6 +28,11 @@
 #       feedback_sha256 to null.
 #   EV1-EV3 `xprov egress-verify`: exit 0 on a good chain and on an absent file, exit 1 naming the line on an edited one.
 #       Mutation: make cmdXprovEgressVerify always exit 0.
+#   EV4-EV8 (follow-up F-011) egress-verify refuses a symlink (EV4), a FIFO without blocking (EV5) and a hard link (EV6), waits for
+#       an append that holds the egress lock (EV7) and reports a lock that stays taken (EV8). Mutations: drop O_NOFOLLOW (EV4); drop
+#       O_NONBLOCK (EV5 times out) or the isFile test (EV5); drop the nlink test (EV6); call verifyEgress without the lock (EV7, EV8).
+#   EV9 $HOME mismatch and EV10 unwritable home read without the lock (locked false).  Mutations: drop the homeMismatch branch
+#       (EV9 locked true); drop the UNWRITABLE_CODES fallback (EV10 exit 1).
 # Helpers are copied from part 40 (a part must run alone in its shard).
 
 mk_workdir TMP42 "a1x42"
@@ -237,6 +242,54 @@ assert_eq "EA10 a 41-hex tree is refused (anchors, sha1 length)" "$(ea10 "$(prin
 assert_eq "EA10 a 65-hex commit is refused (sha256 length is exact)" "$(ea10 "$(printf 'a%.0s' {1..65})" "$(printf 'b%.0s' {1..40})")" "egress_audit_input"
 assert_eq "EA10 sha1 commit and sha256 tree are accepted" "$(ea10 "$(printf 'a%.0s' {1..40})" "$(printf 'b%.0s' {1..64})")" "appended"
 assert_eq "EA10 only the accepted line was written" "$(lines42)" "1"
+
+# EV4-EV8 (follow-up F-011): egress-verify opens the file as the append path does and reads it under the egress lock.
+# The file holds the one good EA10 line here.
+E42="$(EGRESS42)"
+mv "$E42" "$TMP42/ev-real.jsonl"; ln -s "$TMP42/ev-real.jsonl" "$E42"
+ev42; assert_eq "EV4 a symlink is not followed: exit 1, cannot be opened" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + /cannot be opened/.test(j.reason)")" "1/false/true"
+rm -f "$E42"; mkfifo "$E42"
+# A hang is bounded by spawnSync (portable; macOS has no `timeout`): killed after 10 s -> rc 124.
+EV_OUT="$(cd "$PHASE_REPO" && node -e 'const r = require("child_process").spawnSync(process.execPath, process.argv.slice(1), { timeout: 10000, stdio: ["ignore", "pipe", "ignore"] }); process.stdout.write(r.stdout || ""); process.exit(r.status === null ? 124 : r.status);' "$TREE_TOOLS" xprov egress-verify </dev/null)"; EV_RC=$?
+assert_eq "EV5 a FIFO returns at once: exit 1, not a regular file" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + /not a regular file/.test(j.reason)")" "1/false/true"
+rm -f "$E42"; mv "$TMP42/ev-real.jsonl" "$E42"; ln "$E42" "$TMP42/ev-link.jsonl"
+ev42; assert_eq "EV6 a hard-linked file: exit 1, one link" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + /one link/.test(j.reason)")" "1/false/true"
+rm -f "$TMP42/ev-link.jsonl"
+# EV7: an append holds the lock with half a line written; the verify started meanwhile waits and sees two whole lines.
+rm -f "$TMP42/ev7.held"
+node -e '
+  const [tree, file, marker] = process.argv.slice(1);
+  const fs = require("fs"); const path = require("path"); const crypto = require("crypto");
+  const A = require(tree + "/_shared/lib/xprov-audit.cjs");
+  const first = fs.readFileSync(file, "utf8").split("\n")[0];
+  const next = JSON.stringify({ ...JSON.parse(first), round: 2, prev: crypto.createHash("sha256").update(first).digest("hex") }) + "\n";
+  A.withLock(path.dirname(file), () => {
+    fs.appendFileSync(file, next.slice(0, 20)); fs.writeFileSync(marker, "");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+    fs.appendFileSync(file, next.slice(20));
+  }, A.EGRESS_LOCK_FILE);' "$TREE" "$E42" "$TMP42/ev7.held" &
+EV7_PID=$!
+# deliberate-timeout: bounded wait (at most 200 x 50 ms) until the background lock holder has written half a line
+for _ in $(seq 1 200); do [[ -e "$TMP42/ev7.held" ]] && break; sleep 0.05; done
+assert_eq "EV7 the lock holder started (half a line written under the lock)" "$([[ -e "$TMP42/ev7.held" ]] && echo yes || echo no)" "yes"
+ev42; wait "$EV7_PID"
+assert_eq "EV7 a verify during an append waits for the lock: exit 0, two lines" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.lines")" "0/true/2"
+# EV8: a lock that stays taken is reported, not read past.
+printf 'held' > "$HOME/.a1-xprov/.egress-audit.lock"
+ev42; assert_eq "EV8 a live lock: exit 1, checked false, names the lock, no write wording" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.checked + '/' + /egress audit lock/.test(j.reason) + '/' + /nothing written/.test(j.reason)")" "1/false/false/true/false"
+assert_eq "EV8 stderr says NOT CHECKED, not BROKEN" "$(grep -c 'NOT CHECKED' "$TMP42/ev.err")/$(grep -c 'BROKEN' "$TMP42/ev.err")" "1/0"
+rm -f "$HOME/.a1-xprov/.egress-audit.lock"
+ev42; assert_eq "EV7b a normal run reports locked true" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.locked")" "0/true/true"
+# EV9: $HOME is not the owner home (the tree copy's owner-home stand-in reports a mismatch): read without the lock, nothing created.
+OHF42="$TREE/_shared/lib/xprov-owner-home.cjs"; cp "$OHF42" "$TMP42/oh.save"
+sed 's/^  return null;$/  return "fixture: HOME differs";/' "$TMP42/oh.save" > "$OHF42"
+ev42; assert_eq "EV9 home mismatch: exit 0, locked false, no lock file created" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.locked")/$(find "$HOME/.a1-xprov" -name '.egress-audit.lock*' | wc -l | tr -d ' ')" "0/true/false/0"
+assert_eq "EV9 stderr names the read without the lock" "$(grep -c 'read without the lock, nothing created' "$TMP42/ev.err")" "1"
+cp "$TMP42/oh.save" "$OHF42"
+# EV10: a home that is not writable is still checked (no append can be in flight there).
+chmod 500 "$HOME/.a1-xprov"
+ev42; assert_eq "EV10 unwritable home: exit 0, two lines, locked false" "$EV_RC/$(json_get "$EV_OUT" "j.ok + '/' + j.lines + '/' + j.locked")" "0/true/2/false"
+chmod 700 "$HOME/.a1-xprov"
 
 export HOME="$SAVED_HOME_42"
 rm -rf "$TMP42"
