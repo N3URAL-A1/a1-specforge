@@ -69,7 +69,8 @@
       "product-modules/run-index.sh",
       "product-modules/run.sh",
       "product-schema-v11/run.sh",
-      "roadmap-gate/run-tests.sh"
+      "roadmap-gate/run-tests.sh",
+      "unicode-safety/run-tests.sh"
     ]
   },
   "ci_extra_jobs": {
@@ -171,7 +172,8 @@
       "product-modules/run-derive.sh": 0,
       "product-modules/run-help.sh": 0,
       "product-modules/run-index.sh": 2,
-      "roadmap-gate/run-tests.sh": 1
+      "roadmap-gate/run-tests.sh": 1,
+      "unicode-safety/run-tests.sh": 1
     }
   }
 }
