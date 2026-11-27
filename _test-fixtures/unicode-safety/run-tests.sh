@@ -44,6 +44,11 @@ if [[ -r "$WORK/locked.md" ]]; then ok "U9 skipped (runs as a user that reads mo
   expect "U9 unreadable tracked file: exit 2, file named" 2 "cannot read locked.md" node "$WORK/bin/check-unicode-safety.cjs"
 fi
 chmod 644 "$WORK/locked.md"
+rm -rf "$WORK/.git" "$WORK/locked.md"; mkdir -p "$WORK/node_modules/x"
+printf 'a\xe2\x80\x8bb\n' > "$WORK/node_modules/x/readme.md"
+expect "U10 no git data: the folder is scanned, node_modules left out" 0 "0 hit(s) in 1 text files" node "$WORK/bin/check-unicode-safety.cjs"
+printf 'a\xe2\x80\x8bb\n' > "$WORK/untracked.md"
+expect "U11 no git data: a planted character is still found" 1 "untracked.md:1: U+200B" node "$WORK/bin/check-unicode-safety.cjs"
 
 echo "unicode-safety fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

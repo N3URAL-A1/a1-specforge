@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Fails when a tracked instruction or config text file holds an invisible or bidi control character:
 // such a character can hide an instruction from the human reader. Idea: affaan-m/ECC check-unicode-safety (MIT).
-// Usage: node bin/check-unicode-safety.cjs [--self-test]    exit 0 clean, 1 hits, 2 usage, git or read error
+// Usage: node bin/check-unicode-safety.cjs [--self-test]    exit 0 clean, 1 hits, 2 usage or read error
+// Scans the files git tracks; without git data it scans every file under the repo root.
 // This file is pure ASCII on purpose: every code point is a number, so the list stays reviewable.
 'use strict';
 const { execFileSync } = require('child_process');
@@ -75,6 +76,17 @@ function scan(root, files) {
   return { hits, errors, scanned };
 }
 
+/** Every file under root, relative paths; `.git` and `node_modules` are left out. Symlinks are not followed. */
+function walk(root, rel) {
+  const out = [];
+  for (const ent of fs.readdirSync(path.join(root, rel), { withFileTypes: true })) {
+    const child = rel ? `${rel}/${ent.name}` : ent.name;
+    if (ent.isDirectory()) { if (ent.name !== '.git' && ent.name !== 'node_modules') out.push(...walk(root, child)); }
+    else out.push(child);
+  }
+  return out;
+}
+
 // Independent of BAD_RANGES on purpose: dropping a range above turns the self-test red.
 const SELF_TEST_BAD = [0x00ad, 0x034f, 0x061c, 0x115f, 0x1160, 0x17b4, 0x180b, 0x180e, 0x200b, 0x200d, 0x200f,
   0x202a, 0x202e, 0x2060, 0x2064, 0x2066, 0x2069, 0x3164, 0xfe00, 0xfe0d, 0xfeff, 0xffa0, 0xfff9, 0xfffb,
@@ -103,8 +115,9 @@ function main(argv) {
   if (argv.length) { console.error('usage: check-unicode-safety.cjs [--self-test]'); return 2; }
   const root = path.resolve(__dirname, '..');
   let files;
-  try { files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean); }
-  catch (e) { console.error(`git ls-files failed: ${e.message}`); return 2; }
+  try {
+    files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean);
+  } catch (e) { files = walk(root, ''); } // no git data (release tarball, `git archive` snapshot): scan the folder itself
   const { hits, errors, scanned } = scan(root, files);
   hits.forEach((h) => console.error(h));
   errors.forEach((e) => console.error(`cannot read ${e}`));
