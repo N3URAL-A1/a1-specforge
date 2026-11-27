@@ -276,6 +276,7 @@ part headers; the runner suite is `_test-fixtures/a1-suite-runner/`, parts under
 | Failure and read-only dirs | F1, F2, F4-F6 | exit 0 after a failure; `FAILED:` line without identity or log path; read-only TMPDIR / log base / lock parent not exit 2 |
 | PR review fix round (`a1-suite-runner` parts 06, 07, 09, 11, 12, 13) | G1, G2, V1c, V7, Q9, N1-N4, T1-T2, P1, K1e, SA7, SA8 | reap on the group leader alone (late writer outlives the run); takeover without ending the dead holder's worker groups; `A1_SUITE_REAL_VAULT` passed to every suite; check-groups regex without `--job=x`, quotes, flags, or accepting `if:` / `continue-on-error` / `\|\| true` / echo; `.a1/learnings` not compared; no log tail on a red suite; a pid-less lock taken over after 1 s; a run marker exported again |
 | Suite isolation self-test (`a1-vault-cockpit` 04c, spec 026 FR-022) | I1a-I1c, I2 | drop the sentinel emptiness check in `bin/run-suites.sh` (I1a red); drop the a1-reconcile restore (I2 red) |
+| Invisible/bidi character check (`unicode-safety`, `bin/check-unicode-safety.cjs`) | U1-U11 | drop one range from `BAD_RANGES` (U1 red: the self-test list is independent of it); drop the two-selectors rule (U1 red); treat U+FE0F as bad (U1, U8 red); read symlinks (U1 red); swallow read errors (U9 red); exit 2 without git data instead of walking the folder (U10, U11 red) |
 
 No dedicated mutation exists for U7 (overlapping selectors start a suite twice), F3 (failing suite
 dropped from the table) and V3 (A1_SUITE_REAL_VAULT exported after the sentinel replaced it). The
