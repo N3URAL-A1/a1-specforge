@@ -694,8 +694,10 @@ caseR30j2() {
     hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$p" | bash "$hook" 2>/dev/null)"
     assert_json "R30j2-6e hook denies the obfuscated command ${p}" "$hv" "j.hookSpecificOutput.permissionDecision" "deny"
   done
-  assert_json "R30j2-6d .claude/settings.json wires the hook as a Bash PreToolUse hook and denies Edit/Write on both paths" "$(cat "$REPO_ROOT/.claude/settings.json")" \
-    "[j.hooks.PreToolUse.some((m) => m.matcher === 'Bash' && m.hooks.some((h) => /xprov-deny-allowlist-approve\.sh/.test(h.command))), ['Edit', 'Write'].every((t) => ['xprov-secret-allowlist.json', 'allowlist-approvals.json', '.a1/xprov.json'].every((f) => j.permissions.deny.some((r) => r.startsWith(t + '(') && r.includes(f))))].join('/')" "true/true"
+  # Edit(path) covers every file-writing tool; a Write(path) deny rule is accepted but never matched
+  # (Claude Code permissions docs), so none may come back and pretend to protect something.
+  assert_json "R30j2-6d .claude/settings.json wires the hook as a Bash PreToolUse hook, denies Edit on the three paths and holds no dead Write(path) rule" "$(cat "$REPO_ROOT/.claude/settings.json")" \
+    "[j.hooks.PreToolUse.some((m) => m.matcher === 'Bash' && m.hooks.some((h) => /xprov-deny-allowlist-approve\.sh/.test(h.command))), ['xprov-secret-allowlist.json', 'allowlist-approvals.json', '.a1/xprov.json'].every((f) => j.permissions.deny.some((r) => r.startsWith('Edit(') && r.includes(f))), !j.permissions.deny.some((r) => r.startsWith('Write('))].join('/')" "true/true/true"
   # 8: wrong typed count
   scen8; rm -f "$HOME/.a1-xprov/$STORE_NAME"
   PTY_TYPED=2 pty8 "${NOCLAUDE8[@]}" node "$tools" xprov allowlist approve --repo "$R8"; rc=$?
