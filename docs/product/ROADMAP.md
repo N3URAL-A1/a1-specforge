@@ -449,7 +449,6 @@ None.
 
 ## Changelog
 
-- **2026-10-14** — 015 docs consolidation done; 016 xprov autonomy and 017 enforced self-checks added and prioritised ahead of 006 — owner decision 2026-10-14: reliability and autonomy before launch and new profiles (record 2026-10-14-a1-autonomy-chat-consent)
 - **2026-10-14** — 016-xprov-autonomy -> started — stage transition via `product stage`
 - **2026-10-15** — feature '018-pipeline-metrics' added — new feature via `product add-feature`
 - **2026-10-15** — feature.md created for '018-pipeline-metrics' — formal spec/plan attached via `product feature-init`
@@ -549,6 +548,7 @@ None.
 - **2026-11-28** — feature '033-review-dedupe-verify' added — a1-pr-review and a1-analyze merge duplicate findings of several reviewers by offending evidence (strictest severity kept) and send each unique BLOCKER/MAJOR to a second agent that tries to refute it; bad input fails closed. Check the Workflow tool API before relying on it. Source: analysis project/a1-specforge/analyses/2026-11-27-general.md F-006.
 - **2026-11-28** — feature '034-skill-trace-grading' added — a1-tools skill trace-grade checks a recorded tool-call timeline against a skill's step order with deterministic matchers (tool name plus argument regex), no LLM classifier; one compliant and one non-compliant trace fixture per skill; result feeds a1-evolve. Live runs are opt-in and outside CI. Source: analysis project/a1-specforge/analyses/2026-11-27-general.md F-002.
 - **2026-11-28** — feature '035-unicode-check-code-files' added — _shared/lib/dashboard-read.cjs, depth-pass.cjs and xprov-filter.cjs hold their invisible characters as numeric escapes, then bin/check-unicode-safety.cjs also scans .cjs, .sh, .jsonl, .toml and .html; deliberate probes in test files get a named exemption. Follow-up of PR #143.
+- **2026-11-28** — 035-unicode-check-code-files: four tracked test scripts also hold one raw invisible character each (_test-fixtures/a1-depth-pass/run-tests.sh, a1-intent/cases/09-schema.sh, a1-xprov/parts/03-hardening.sh, a1-xprov/parts/33-handover-check.sh) — review of PR #144: spec 035 must list them as exemptions or escape candidates; spec 032 must carry _shared/lib/context-pressure.cjs (message.id dedupe as in cost.cjs), hook ids in gates-registry.md and no profiles before three hooks
 
 ## Appendix — migrated details
 
