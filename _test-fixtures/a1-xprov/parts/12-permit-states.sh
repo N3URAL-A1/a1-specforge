@@ -326,10 +326,11 @@ caseP12() {
     hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$p" | bash "$hook" 2>/dev/null)"
     assert_json "P12 hook denies ${p}" "$hv" "j.hookSpecificOutput.permissionDecision" "deny"
   done
-  # The Edit/Write tools bypass the Bash hook: settings.json must deny them on the denial store too.
+  # The file tools bypass the Bash hook: settings.json must deny them on the denial store too.
+  # One Edit(path) rule covers Edit, Write and NotebookEdit; Write(path) rules are never matched.
   local sj="${P12_SETTINGS:-$REPO_ROOT/.claude/settings.json}"
-  assert_json "P12 settings.json denies Edit and Write of ~/.a1-xprov/permit-denials.json" "$(cat "$sj")" \
-    "['Edit', 'Write'].every((t) => j.permissions.deny.includes(t + '(~/.a1-xprov/permit-denials.json)'))" "true"
+  assert_json "P12 settings.json denies file edits of ~/.a1-xprov/permit-denials.json" "$(cat "$sj")" \
+    "j.permissions.deny.includes('Edit(~/.a1-xprov/permit-denials.json)')" "true"
   local -a allow=('node _shared/a1-tools.cjs xprov permit-check''xprov permit-check --repo .' 'git status' 'cat ~/.a1-xprov/permit-check.txt')
   for p in "${allow[@]}"; do
     hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$p" | bash "$hook" 2>/dev/null)"
