@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-11-24
+updated: 2026-11-28
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -323,6 +323,46 @@ features:
     finished: 2026-11-15
     spec_path: project/a1-specforge/spec/028-measured-gap-checks.md
     plan_path: project/a1-specforge/plans/028-measured-gap-checks-wave-plan.md
+  - id: 032-context-pressure-gate
+    milestone: continuous
+    title: "Context-pressure gate with a shared hook runtime"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
+  - id: 033-review-dedupe-verify
+    milestone: continuous
+    title: "Review findings merged by evidence, blocker-level findings verified"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
+  - id: 034-skill-trace-grading
+    milestone: continuous
+    title: "Skill trace grading: a recorded run follows the skill's steps in order"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
+  - id: 035-unicode-check-code-files
+    milestone: continuous
+    title: "Unicode safety check covers code files"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
 next: 006-specforge-kritis-profile
 ---
 
@@ -409,10 +449,6 @@ None.
 
 ## Changelog
 
-- **2026-10-14** — feature '016-xprov-autonomy' added — new feature via `product add-feature`
-- **2026-10-14** — feature '017-enforced-self-checks' added — new feature via `product add-feature`
-- **2026-10-14** — feature.md created for '016-xprov-autonomy' — formal spec/plan attached via `product feature-init`
-- **2026-10-14** — feature.md created for '017-enforced-self-checks' — formal spec/plan attached via `product feature-init`
 - **2026-10-14** — 015 docs consolidation done; 016 xprov autonomy and 017 enforced self-checks added and prioritised ahead of 006 — owner decision 2026-10-14: reliability and autonomy before launch and new profiles (record 2026-10-14-a1-autonomy-chat-consent)
 - **2026-10-14** — 016-xprov-autonomy -> started — stage transition via `product stage`
 - **2026-10-15** — feature '018-pipeline-metrics' added — new feature via `product add-feature`
@@ -509,6 +545,10 @@ None.
 - **2026-11-15** — 028-measured-gap-checks -> done — stage transition via `product stage`
 - **2026-11-16** — 027-lean-pipeline -> started — stage transition via `product stage`
 - **2026-11-24** — 027-lean-pipeline -> done — stage transition via `product stage`
+- **2026-11-28** — feature '032-context-pressure-gate' added — A runtime hook reads the latest usage record of the session transcript, warns past a context threshold and points to STATUS/PLAN instead of writing an LLM summary; gate id context-pressure in gates-registry.md, fixtures for 200k and 1M windows. Ships _shared/lib/hook-runtime.cjs (stable hook ids, disable list, fail-closed input cap, watchdog) because this is the second runtime hook. Source: analysis project/a1-specforge/analyses/2026-11-27-general.md F-001, F-008.
+- **2026-11-28** — feature '033-review-dedupe-verify' added — a1-pr-review and a1-analyze merge duplicate findings of several reviewers by offending evidence (strictest severity kept) and send each unique BLOCKER/MAJOR to a second agent that tries to refute it; bad input fails closed. Check the Workflow tool API before relying on it. Source: analysis project/a1-specforge/analyses/2026-11-27-general.md F-006.
+- **2026-11-28** — feature '034-skill-trace-grading' added — a1-tools skill trace-grade checks a recorded tool-call timeline against a skill's step order with deterministic matchers (tool name plus argument regex), no LLM classifier; one compliant and one non-compliant trace fixture per skill; result feeds a1-evolve. Live runs are opt-in and outside CI. Source: analysis project/a1-specforge/analyses/2026-11-27-general.md F-002.
+- **2026-11-28** — feature '035-unicode-check-code-files' added — _shared/lib/dashboard-read.cjs, depth-pass.cjs and xprov-filter.cjs hold their invisible characters as numeric escapes, then bin/check-unicode-safety.cjs also scans .cjs, .sh, .jsonl, .toml and .html; deliberate probes in test files get a named exemption. Follow-up of PR #143.
 
 ## Appendix — migrated details
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-25T11:24:58.592Z",
+  "generated": "2026-11-28T00:12:48.046Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -402,6 +402,54 @@
       "finished": "2026-11-15",
       "spec_path": "project/a1-specforge/spec/028-measured-gap-checks.md",
       "plan_path": "project/a1-specforge/plans/028-measured-gap-checks-wave-plan.md"
+    },
+    {
+      "id": "032-context-pressure-gate",
+      "milestone": "continuous",
+      "title": "Context-pressure gate with a shared hook runtime",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "033-review-dedupe-verify",
+      "milestone": "continuous",
+      "title": "Review findings merged by evidence, blocker-level findings verified",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "034-skill-trace-grading",
+      "milestone": "continuous",
+      "title": "Skill trace grading: a recorded run follows the skill's steps in order",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "035-unicode-check-code-files",
+      "milestone": "continuous",
+      "title": "Unicode safety check covers code files",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
     }
   ],
   "next": "006-specforge-kritis-profile",
